@@ -1,0 +1,30 @@
+{
+  "name": "web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@epub-reader/core": "workspace:^",
+    "@epub-reader/ui": "workspace:^",
+    "@epub-reader/web-adapter": "workspace:^",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.23.1",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.33",
+    "@types/react-dom": "^18.2.14",
+    "@types/jszip": "^3.4.1",
+    "@types/node": "^20.11.25",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.4"
+  }
+}

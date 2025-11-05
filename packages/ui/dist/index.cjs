@@ -283,6 +283,7 @@ function toArrayBuffer(source) {
 function ReaderView({
   service,
   bookData,
+  bookId,
   className,
   style,
   flow = "paginated",
@@ -293,13 +294,23 @@ function ReaderView({
   statusFormatter,
   controlsOverrides,
   enableKeyboardShortcuts = true,
-  enableTouchGestures = true
+  enableTouchGestures = true,
+  progressService,
+  progressDebounceMs = 750,
+  onProgress
 }) {
   const containerRef = (0, import_react2.useRef)(null);
   const lastInitialLocationRef = (0, import_react2.useRef)(void 0);
   const touchStartXRef = (0, import_react2.useRef)(null);
   const touchStartYRef = (0, import_react2.useRef)(null);
   const pendingGestureRef = (0, import_react2.useRef)(null);
+  const lastSavedLocationRef = (0, import_react2.useRef)(null);
+  const progressTimerRef = (0, import_react2.useRef)(null);
+  const sessionStartRef = (0, import_react2.useRef)(null);
+  const sessionStartPageRef = (0, import_react2.useRef)(0);
+  const lastPageRef = (0, import_react2.useRef)(0);
+  const lastLocationRef = (0, import_react2.useRef)(null);
+  const unmountedRef = (0, import_react2.useRef)(false);
   const [isLoading, setIsLoading] = (0, import_react2.useState)(true);
   const [isReady, setIsReady] = (0, import_react2.useState)(false);
   const [isNavigating, setIsNavigating] = (0, import_react2.useState)(false);
@@ -307,8 +318,68 @@ function ReaderView({
   const [currentLocation, setCurrentLocation] = (0, import_react2.useState)(
     null
   );
+  const [currentProgress, setCurrentProgress] = (0, import_react2.useState)(
+    null
+  );
+  const saveProgressImmediate = (0, import_react2.useCallback)(
+    async (location, suppressState = false) => {
+      if (!progressService || !location.cfi) {
+        return;
+      }
+      try {
+        const updated = await progressService.updateProgress(bookId, location, {
+          totalPages: location.totalPages,
+          sessionStartTime: sessionStartRef.current ?? void 0
+        });
+        lastSavedLocationRef.current = updated.cfi;
+        lastPageRef.current = updated.currentPage;
+        if (!suppressState && !unmountedRef.current) {
+          setCurrentProgress(updated);
+        }
+        onProgress?.(updated);
+      } catch (err) {
+        const normalized = toError(err);
+        if (!suppressState && !unmountedRef.current) {
+          setError(normalized.message);
+        }
+        onError?.(normalized);
+      }
+    },
+    [bookId, onError, onProgress, progressService]
+  );
+  const scheduleProgressSave = (0, import_react2.useCallback)(
+    (location) => {
+      if (!progressService || !location.cfi) {
+        return;
+      }
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      progressTimerRef.current = window.setTimeout(() => {
+        void saveProgressImmediate(location);
+      }, progressDebounceMs);
+    },
+    [progressDebounceMs, progressService, saveProgressImmediate]
+  );
+  const queueProgressUpdate = (0, import_react2.useCallback)(
+    (location) => {
+      if (!location || !location.cfi) {
+        return;
+      }
+      lastLocationRef.current = location;
+      if (typeof location.page === "number" && location.page > 0) {
+        lastPageRef.current = location.page;
+      }
+      if (location.cfi !== lastSavedLocationRef.current) {
+        scheduleProgressSave(location);
+      }
+    },
+    [scheduleProgressSave]
+  );
   (0, import_react2.useEffect)(() => {
     let cancelled = false;
+    unmountedRef.current = false;
     async function loadAndRender() {
       if (!containerRef.current) {
         return;
@@ -317,16 +388,40 @@ function ReaderView({
       setIsReady(false);
       setCurrentLocation(null);
       setError(null);
+      setCurrentProgress(null);
+      lastSavedLocationRef.current = null;
+      lastPageRef.current = 0;
+      lastLocationRef.current = null;
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
       try {
         await service.destroy().catch(() => void 0);
         const buffer = toArrayBuffer(bookData);
         await service.loadBook(buffer);
+        let resumeLocation = initialLocation;
+        if (progressService) {
+          const existingProgress = await progressService.getProgress(bookId);
+          if (existingProgress) {
+            setCurrentProgress(existingProgress);
+            lastSavedLocationRef.current = existingProgress.cfi;
+            lastPageRef.current = existingProgress.currentPage;
+            resumeLocation = resumeLocation ?? existingProgress.cfi;
+          }
+          await progressService.startSession(bookId);
+          sessionStartRef.current = /* @__PURE__ */ new Date();
+          sessionStartPageRef.current = existingProgress?.currentPage ?? 0;
+        } else {
+          sessionStartRef.current = /* @__PURE__ */ new Date();
+          sessionStartPageRef.current = 0;
+        }
         if (cancelled || !containerRef.current) {
           return;
         }
         await service.renderTo(containerRef.current, {
           flow,
-          restoreLocation: initialLocation
+          restoreLocation: resumeLocation
         });
         if (cancelled) {
           return;
@@ -339,6 +434,7 @@ function ReaderView({
         if (location) {
           setCurrentLocation(location);
           onLocationChange?.(location);
+          queueProgressUpdate(location);
         }
       } catch (err) {
         if (cancelled) {
@@ -354,9 +450,33 @@ function ReaderView({
     void loadAndRender();
     return () => {
       cancelled = true;
+      unmountedRef.current = true;
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      if (progressService && lastLocationRef.current && lastLocationRef.current.cfi) {
+        void saveProgressImmediate(lastLocationRef.current, true).catch(() => void 0);
+      }
+      if (progressService && sessionStartRef.current) {
+        const pagesRead = Math.max(0, lastPageRef.current - sessionStartPageRef.current);
+        void progressService.endSession(bookId, pagesRead).catch(() => void 0);
+        sessionStartRef.current = null;
+      }
       void service.destroy().catch(() => void 0);
     };
-  }, [bookData, flow, initialLocation, onLocationChange, onReady, onError, service]);
+  }, [
+    bookData,
+    flow,
+    initialLocation,
+    onLocationChange,
+    onReady,
+    onError,
+    progressService,
+    queueProgressUpdate,
+    saveProgressImmediate,
+    service
+  ]);
   (0, import_react2.useEffect)(() => {
     if (!isReady) {
       return;
@@ -366,6 +486,7 @@ function ReaderView({
       if (location) {
         setCurrentLocation(location);
         onLocationChange?.(location);
+        queueProgressUpdate(location);
       }
       setIsNavigating(false);
     };
@@ -388,7 +509,7 @@ function ReaderView({
       service.off("rendered", handleRendered);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isReady, onLocationChange, service]);
+  }, [isReady, onLocationChange, queueProgressUpdate, service]);
   (0, import_react2.useEffect)(() => {
     if (!isReady || !initialLocation) {
       return;
@@ -462,7 +583,8 @@ function ReaderView({
     const status = {
       location: currentLocation,
       isLoading,
-      error
+      error,
+      progress: currentProgress
     };
     if (statusFormatter) {
       const formatted = statusFormatter(status);

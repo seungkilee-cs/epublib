@@ -6,7 +6,8 @@ import {
   useMemo,
 } from "react";
 import styles from "./ThemeProvider.module.css";
-import { baseTheme, ReaderTheme } from "./tokens";
+import { baseTheme } from "./tokens";
+import type { ReaderTheme } from "./tokens";
 import { mergeTheme, ThemeOverrides } from "./mergeTheme";
 import { themeToCssVariables } from "./themeToCssVariables";
 

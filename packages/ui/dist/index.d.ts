@@ -1,6 +1,6 @@
 import * as react_jsx_runtime from 'react/jsx-runtime';
 import { PropsWithChildren, CSSProperties, ButtonHTMLAttributes } from 'react';
-import { EPUBService, EPUBServiceOptions, LocationInfo } from '@epub-reader/core';
+import { EPUBService, EPUBServiceOptions, LocationInfo, ReadingProgress, ProgressService } from '@epub-reader/core';
 
 declare const colors: {
     readonly background: "#fdfdfd";
@@ -129,12 +129,15 @@ type ReaderViewStatus = {
     location: LocationInfo | null;
     isLoading: boolean;
     error: string | null;
+    progress: ReadingProgress | null;
 };
 type BookBinarySource = ArrayBuffer | SharedArrayBuffer | ArrayBufferView;
 type ControlsOverrides = Partial<Omit<NavigationControlsProps, "onNext" | "onPrev" | "disableNext" | "disablePrev">>;
+type ProgressApi = Pick<ProgressService, "updateProgress" | "getProgress" | "startSession" | "endSession">;
 type ReaderViewProps = {
     service: EPUBService;
     bookData: BookBinarySource;
+    bookId: string;
     className?: string;
     style?: CSSProperties;
     flow?: EPUBServiceOptions["flow"];
@@ -146,7 +149,10 @@ type ReaderViewProps = {
     controlsOverrides?: ControlsOverrides;
     enableKeyboardShortcuts?: boolean;
     enableTouchGestures?: boolean;
+    progressService?: ProgressApi;
+    progressDebounceMs?: number;
+    onProgress?: (progress: ReadingProgress) => void;
 };
-declare function ReaderView({ service, bookData, className, style, flow, initialLocation, onLocationChange, onReady, onError, statusFormatter, controlsOverrides, enableKeyboardShortcuts, enableTouchGestures, }: ReaderViewProps): react_jsx_runtime.JSX.Element;
+declare function ReaderView({ service, bookData, bookId, className, style, flow, initialLocation, onLocationChange, onReady, onError, statusFormatter, controlsOverrides, enableKeyboardShortcuts, enableTouchGestures, progressService, progressDebounceMs, onProgress, }: ReaderViewProps): react_jsx_runtime.JSX.Element;
 
 export { NavigationControls, type NavigationControlsProps, type ReaderTheme, ReaderView, type ReaderViewProps, type ReaderViewStatus, type ThemeOverrides, ThemeProvider, baseTheme, colors, radii, shadows, spacing, typography, useTheme };

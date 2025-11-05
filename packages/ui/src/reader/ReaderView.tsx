@@ -7,7 +7,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { LocationInfo } from "@epub-reader/core";
+import type {
+  LocationInfo,
+  ReadingProgress,
+  ProgressService,
+} from "@epub-reader/core";
 import {
   EPUBService,
   type EPUBServiceOptions,
@@ -22,6 +26,7 @@ export type ReaderViewStatus = {
   location: LocationInfo | null;
   isLoading: boolean;
   error: string | null;
+  progress: ReadingProgress | null;
 };
 
 type BookBinarySource = ArrayBuffer | SharedArrayBuffer | ArrayBufferView;
@@ -33,11 +38,17 @@ type ControlsOverrides = Partial<
   >
 >;
 
+type ProgressApi = Pick<
+  ProgressService,
+  "updateProgress" | "getProgress" | "startSession" | "endSession"
+>;
+
 const INTERACTIVE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON"]);
 
 export type ReaderViewProps = {
   service: EPUBService;
   bookData: BookBinarySource;
+  bookId: string;
   className?: string;
   style?: CSSProperties;
   flow?: EPUBServiceOptions["flow"];
@@ -49,6 +60,9 @@ export type ReaderViewProps = {
   controlsOverrides?: ControlsOverrides;
   enableKeyboardShortcuts?: boolean;
   enableTouchGestures?: boolean;
+  progressService?: ProgressApi;
+  progressDebounceMs?: number;
+  onProgress?: (progress: ReadingProgress) => void;
 };
 
 function toError(error: unknown): Error {
@@ -90,6 +104,7 @@ function toArrayBuffer(source: BookBinarySource): ArrayBuffer {
 export function ReaderView({
   service,
   bookData,
+  bookId,
   className,
   style,
   flow = "paginated",
@@ -101,12 +116,22 @@ export function ReaderView({
   controlsOverrides,
   enableKeyboardShortcuts = true,
   enableTouchGestures = true,
+  progressService,
+  progressDebounceMs = 750,
+  onProgress,
 }: ReaderViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastInitialLocationRef = useRef<string | undefined>(undefined);
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const pendingGestureRef = useRef<"prev" | "next" | null>(null);
+  const lastSavedLocationRef = useRef<string | null>(null);
+  const progressTimerRef = useRef<number | null>(null);
+  const sessionStartRef = useRef<Date | null>(null);
+  const sessionStartPageRef = useRef<number>(0);
+  const lastPageRef = useRef<number>(0);
+  const lastLocationRef = useRef<LocationInfo | null>(null);
+  const unmountedRef = useRef(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isReady, setIsReady] = useState(false);
@@ -115,9 +140,80 @@ export function ReaderView({
   const [currentLocation, setCurrentLocation] = useState<LocationInfo | null>(
     null
   );
+  const [currentProgress, setCurrentProgress] = useState<ReadingProgress | null>(
+    null
+  );
+
+  const saveProgressImmediate = useCallback(
+    async (location: LocationInfo, suppressState = false) => {
+      if (!progressService || !location.cfi) {
+        return;
+      }
+
+      try {
+        const updated = await progressService.updateProgress(bookId, location, {
+          totalPages: location.totalPages,
+          sessionStartTime: sessionStartRef.current ?? undefined,
+        });
+
+        lastSavedLocationRef.current = updated.cfi;
+        lastPageRef.current = updated.currentPage;
+
+        if (!suppressState && !unmountedRef.current) {
+          setCurrentProgress(updated);
+        }
+
+        onProgress?.(updated);
+      } catch (err) {
+        const normalized = toError(err);
+        if (!suppressState && !unmountedRef.current) {
+          setError(normalized.message);
+        }
+        onError?.(normalized);
+      }
+    },
+    [bookId, onError, onProgress, progressService]
+  );
+
+  const scheduleProgressSave = useCallback(
+    (location: LocationInfo) => {
+      if (!progressService || !location.cfi) {
+        return;
+      }
+
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+
+      progressTimerRef.current = window.setTimeout(() => {
+        void saveProgressImmediate(location);
+      }, progressDebounceMs);
+    },
+    [progressDebounceMs, progressService, saveProgressImmediate]
+  );
+
+  const queueProgressUpdate = useCallback(
+    (location: LocationInfo | null) => {
+      if (!location || !location.cfi) {
+        return;
+      }
+
+      lastLocationRef.current = location;
+      if (typeof location.page === "number" && location.page > 0) {
+        lastPageRef.current = location.page;
+      }
+
+      if (location.cfi !== lastSavedLocationRef.current) {
+        scheduleProgressSave(location);
+      }
+    },
+    [scheduleProgressSave]
+  );
 
   useEffect(() => {
     let cancelled = false;
+    unmountedRef.current = false;
 
     async function loadAndRender() {
       if (!containerRef.current) {
@@ -128,6 +224,14 @@ export function ReaderView({
       setIsReady(false);
       setCurrentLocation(null);
       setError(null);
+      setCurrentProgress(null);
+      lastSavedLocationRef.current = null;
+      lastPageRef.current = 0;
+      lastLocationRef.current = null;
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
 
       try {
         await service.destroy().catch(() => undefined);
@@ -135,13 +239,30 @@ export function ReaderView({
         const buffer = toArrayBuffer(bookData);
         await service.loadBook(buffer);
 
+        let resumeLocation = initialLocation;
+        if (progressService) {
+          const existingProgress = await progressService.getProgress(bookId);
+          if (existingProgress) {
+            setCurrentProgress(existingProgress);
+            lastSavedLocationRef.current = existingProgress.cfi;
+            lastPageRef.current = existingProgress.currentPage;
+            resumeLocation = resumeLocation ?? existingProgress.cfi;
+          }
+          await progressService.startSession(bookId);
+          sessionStartRef.current = new Date();
+          sessionStartPageRef.current = existingProgress?.currentPage ?? 0;
+        } else {
+          sessionStartRef.current = new Date();
+          sessionStartPageRef.current = 0;
+        }
+
         if (cancelled || !containerRef.current) {
           return;
         }
 
         await service.renderTo(containerRef.current, {
           flow,
-          restoreLocation: initialLocation,
+          restoreLocation: resumeLocation,
         });
 
         if (cancelled) {
@@ -157,6 +278,7 @@ export function ReaderView({
         if (location) {
           setCurrentLocation(location);
           onLocationChange?.(location);
+          queueProgressUpdate(location);
         }
       } catch (err) {
         if (cancelled) {
@@ -174,9 +296,33 @@ export function ReaderView({
 
     return () => {
       cancelled = true;
+      unmountedRef.current = true;
+      if (progressTimerRef.current) {
+        window.clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      if (progressService && lastLocationRef.current && lastLocationRef.current.cfi) {
+        void saveProgressImmediate(lastLocationRef.current, true).catch(() => undefined);
+      }
+      if (progressService && sessionStartRef.current) {
+        const pagesRead = Math.max(0, lastPageRef.current - sessionStartPageRef.current);
+        void progressService.endSession(bookId, pagesRead).catch(() => undefined);
+        sessionStartRef.current = null;
+      }
       void service.destroy().catch(() => undefined);
     };
-  }, [bookData, flow, initialLocation, onLocationChange, onReady, onError, service]);
+  }, [
+    bookData,
+    flow,
+    initialLocation,
+    onLocationChange,
+    onReady,
+    onError,
+    progressService,
+    queueProgressUpdate,
+    saveProgressImmediate,
+    service,
+  ]);
 
   useEffect(() => {
     if (!isReady) {
@@ -188,6 +334,7 @@ export function ReaderView({
       if (location) {
         setCurrentLocation(location);
         onLocationChange?.(location);
+        queueProgressUpdate(location);
       }
       setIsNavigating(false);
     };
@@ -215,7 +362,7 @@ export function ReaderView({
       service.off("rendered", handleRendered);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isReady, onLocationChange, service]);
+  }, [isReady, onLocationChange, queueProgressUpdate, service]);
 
   useEffect(() => {
     if (!isReady || !initialLocation) {
@@ -304,6 +451,7 @@ export function ReaderView({
       location: currentLocation,
       isLoading,
       error,
+      progress: currentProgress,
     };
 
     if (statusFormatter) {

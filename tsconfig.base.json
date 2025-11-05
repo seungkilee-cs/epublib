@@ -20,7 +20,9 @@
       "@epub-reader/web-adapter": ["packages/web-adapter/src"],
       "@epub-reader/web-adapter/*": ["packages/web-adapter/src/*"],
       "@epub-reader/tauri-adapter": ["packages/tauri-adapter/src"],
-      "@epub-reader/tauri-adapter/*": ["packages/tauri-adapter/src/*"]
+      "@epub-reader/tauri-adapter/*": ["packages/tauri-adapter/src/*"],
+      "vite": ["node_modules/vite/types"],
+      "vite/*": ["node_modules/vite/types/*"]
     }
   }
 }
