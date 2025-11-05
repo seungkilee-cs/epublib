@@ -1,0 +1,11 @@
+.themeRoot {
+  color: var(--reader-color-text);
+  background-color: var(--reader-color-background);
+  font-family: var(--reader-typography-font-family);
+  line-height: var(--reader-typography-line-height-normal);
+  min-height: 100%;
+}
+
+.themeRoot * {
+  box-sizing: border-box;
+}

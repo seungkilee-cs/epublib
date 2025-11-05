@@ -1,0 +1,379 @@
+import { openDB, IDBPDatabase, DBSchema, IDBPCursorWithValue } from "idb";
+import {
+  Annotation,
+  AnnotationType,
+  Book,
+  Collection,
+  IStorageAdapter,
+  ReadingProgress,
+  ReadingSession,
+  Settings,
+  StorageInitializationOptions,
+} from "@epub-reader/core";
+import { v4 as uuid } from "uuid";
+
+interface ReaderDB extends DBSchema {
+  books: {
+    key: string;
+    value: Book;
+  };
+  files: {
+    key: string;
+    value: ArrayBuffer;
+  };
+  annotations: {
+    key: string;
+    value: Annotation & { bookId: string };
+    indexes: { by_book: string; by_type: string };
+  };
+  progress: {
+    key: string;
+    value: ReadingProgress;
+  };
+  collections: {
+    key: string;
+    value: Collection;
+  };
+  settings: {
+    key: string;
+    value: Settings;
+  };
+  sessions: {
+    key: string;
+    value: ReadingSession & { id: string };
+    indexes: { by_book: string; by_date: string };
+  };
+}
+
+export class IndexedDBStorageAdapter implements IStorageAdapter {
+  private dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null;
+
+  private dbName = "epub-reader";
+
+  async initialize(options?: StorageInitializationOptions): Promise<void> {
+    if (options?.dbName) {
+      this.dbName = options.dbName;
+    }
+
+    this.dbPromise = openDB<ReaderDB>(this.dbName, 1, {
+      upgrade(db: IDBPDatabase<ReaderDB>) {
+        if (!db.objectStoreNames.contains("books")) {
+          db.createObjectStore("books", { keyPath: "id" });
+        }
+
+        if (!db.objectStoreNames.contains("files")) {
+          db.createObjectStore("files");
+        }
+
+        if (!db.objectStoreNames.contains("annotations")) {
+          const store = db.createObjectStore("annotations", { keyPath: "id" });
+          store.createIndex("by_book", "bookId", { unique: false });
+          store.createIndex("by_type", "type", { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains("progress")) {
+          db.createObjectStore("progress", { keyPath: "bookId" });
+        }
+
+        if (!db.objectStoreNames.contains("collections")) {
+          db.createObjectStore("collections", { keyPath: "id" });
+        }
+
+        if (!db.objectStoreNames.contains("settings")) {
+          db.createObjectStore("settings");
+        }
+
+        if (!db.objectStoreNames.contains("sessions")) {
+          const store = db.createObjectStore("sessions", { keyPath: "id" });
+          store.createIndex("by_book", "bookId", { unique: false });
+          store.createIndex("by_date", "startTime", { unique: false });
+        }
+      },
+    });
+
+    await this.dbPromise;
+  }
+
+  private async db(): Promise<IDBPDatabase<ReaderDB>> {
+    if (!this.dbPromise) {
+      await this.initialize();
+    }
+
+    if (!this.dbPromise) {
+      throw new Error("IndexedDB not initialized");
+    }
+
+    return this.dbPromise;
+  }
+
+  async saveBook(book: Book, file: ArrayBuffer): Promise<string> {
+    const db = await this.db();
+    const tx = db.transaction(["books", "files"], "readwrite");
+
+    await tx.objectStore("books").put(book);
+    await tx.objectStore("files").put(file, book.id);
+
+    await tx.done;
+    return book.id;
+  }
+
+  async getBook(id: string): Promise<Book | null> {
+    const db = await this.db();
+    return (await db.get("books", id)) ?? null;
+  }
+
+  async getAllBooks(): Promise<Book[]> {
+    const db = await this.db();
+    return db.getAll("books");
+  }
+
+  async updateBook(id: string, updates: Partial<Book>): Promise<void> {
+    const db = await this.db();
+    const book = await db.get("books", id);
+
+    if (!book) {
+      throw new Error(`Book with id ${id} not found`);
+    }
+
+    const updated = { ...book, ...updates, id };
+    await db.put("books", updated);
+  }
+
+  async deleteBook(id: string): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction(
+      ["books", "files", "progress", "annotations", "sessions"],
+      "readwrite"
+    );
+
+    await tx.objectStore("books").delete(id);
+    await tx.objectStore("files").delete(id);
+    await tx.objectStore("progress").delete(id);
+
+    // Delete annotations for book
+    const annotationsStore = tx.objectStore("annotations");
+    const annotationIndex = annotationsStore.index("by_book");
+    const annotations = await annotationIndex.getAll(id);
+    for (const annotation of annotations) {
+      await annotationsStore.delete(annotation.id);
+    }
+
+    // Delete sessions for book
+    const sessionsStore = tx.objectStore("sessions");
+    const sessionIndex = sessionsStore.index("by_book");
+    const sessions = await sessionIndex.getAll(id);
+    for (const session of sessions) {
+      await sessionsStore.delete(session.id);
+    }
+
+    await tx.done;
+  }
+
+  async searchBooks(query: string): Promise<Book[]> {
+    if (!query) {
+      return this.getAllBooks();
+    }
+
+    const db = await this.db();
+    const lower = query.toLowerCase();
+    const books = await db.getAll("books");
+    return books.filter((book: Book) =>
+      [book.title, book.author, book.description]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => value.toLowerCase().includes(lower))
+    );
+  }
+
+  async saveAnnotation(annotation: Annotation): Promise<string> {
+    const db = await this.db();
+    const id = annotation.id || uuid();
+    await db.put("annotations", { ...annotation, id });
+    return id;
+  }
+
+  async getAnnotation(id: string): Promise<Annotation | null> {
+    const db = await this.db();
+    return (await db.get("annotations", id)) ?? null;
+  }
+
+  async getAnnotations(
+    bookId: string,
+    type?: AnnotationType
+  ): Promise<Annotation[]> {
+    const db = await this.db();
+    const tx = db.transaction("annotations");
+    const store = tx.store;
+    const records = await store.index("by_book").getAll(bookId);
+    await tx.done;
+
+    const annotations = records as Annotation[];
+    return type ? annotations.filter((annotation) => annotation.type === type) : annotations;
+  }
+
+  async updateAnnotation(
+    id: string,
+    updates: Partial<Annotation>
+  ): Promise<void> {
+    const db = await this.db();
+    const existing = await db.get("annotations", id);
+    if (!existing) {
+      throw new Error(`Annotation with id ${id} not found`);
+    }
+    const updated = { ...existing, ...updates, id } as Annotation & { bookId: string };
+    await db.put("annotations", updated);
+  }
+
+  async deleteAnnotation(id: string): Promise<void> {
+    const db = await this.db();
+    await db.delete("annotations", id);
+  }
+
+  async deleteAnnotationsByBook(bookId: string): Promise<void> {
+    const db = await this.db();
+    const tx = db.transaction("annotations", "readwrite");
+    const store = tx.store;
+    const records = await store.index("by_book").getAll(bookId);
+    for (const record of records) {
+      await store.delete(record.id);
+    }
+    await tx.done;
+  }
+
+  async saveProgress(
+    bookId: string,
+    progress: ReadingProgress
+  ): Promise<void> {
+    const db = await this.db();
+    await db.put("progress", { ...progress, bookId });
+  }
+
+  async getProgress(bookId: string): Promise<ReadingProgress | null> {
+    const db = await this.db();
+    return (await db.get("progress", bookId)) ?? null;
+  }
+
+  async getAllProgress(): Promise<ReadingProgress[]> {
+    const db = await this.db();
+    return db.getAll("progress");
+  }
+
+  async deleteProgress(bookId: string): Promise<void> {
+    const db = await this.db();
+    await db.delete("progress", bookId);
+  }
+
+  async saveCollection(collection: Collection): Promise<string> {
+    const db = await this.db();
+    const id = collection.id || uuid();
+    await db.put("collections", { ...collection, id });
+    return id;
+  }
+
+  async getCollection(id: string): Promise<Collection | null> {
+    const db = await this.db();
+    return (await db.get("collections", id)) ?? null;
+  }
+
+  async getAllCollections(): Promise<Collection[]> {
+    const db = await this.db();
+    return db.getAll("collections");
+  }
+
+  async updateCollection(
+    id: string,
+    updates: Partial<Collection>
+  ): Promise<void> {
+    const db = await this.db();
+    const existing = await db.get("collections", id);
+    if (!existing) {
+      throw new Error(`Collection with id ${id} not found`);
+    }
+    await db.put("collections", { ...existing, ...updates, id });
+  }
+
+  async deleteCollection(id: string): Promise<void> {
+    const db = await this.db();
+    await db.delete("collections", id);
+  }
+
+  async saveSettings(settings: Settings): Promise<void> {
+    const db = await this.db();
+    await db.put("settings", settings, "singleton");
+  }
+
+  async getSettings(): Promise<Settings | null> {
+    const db = await this.db();
+    return (await db.get("settings", "singleton")) ?? null;
+  }
+
+  async saveSession(session: ReadingSession): Promise<void> {
+    const db = await this.db();
+    const id = uuid();
+    await db.put("sessions", { ...session, id });
+  }
+
+  async getSessions(
+    bookId?: string,
+    dateFrom?: Date,
+    dateTo?: Date
+  ): Promise<ReadingSession[]> {
+    const db = await this.db();
+    const store = db.transaction("sessions").store;
+
+    let sessions: (ReadingSession & { id: string })[];
+
+    if (bookId) {
+      sessions = await store.index("by_book").getAll(bookId);
+    } else {
+      sessions = await store.getAll();
+    }
+
+    return sessions
+      .filter((session) => {
+        if (dateFrom && session.startTime < dateFrom) {
+          return false;
+        }
+        if (dateTo && session.startTime > dateTo) {
+          return false;
+        }
+        return true;
+      })
+      .map(({ id: _id, ...rest }) => rest);
+  }
+
+  async clearAll(): Promise<void> {
+    const db = await this.db();
+    const stores = [
+      "books",
+      "files",
+      "annotations",
+      "progress",
+      "collections",
+      "settings",
+      "sessions",
+    ] as const;
+
+    await Promise.all(stores.map((store) => db.clear(store)));
+  }
+
+  async getStorageSize(): Promise<number> {
+    const db = await this.db();
+    const books = await db.getAll("books");
+    const files = await db.getAllKeys("files");
+
+    let size = books.reduce<number>(
+      (acc: number, book: Book) => acc + (book.fileSize ?? 0),
+      0
+    );
+
+    // Estimate additional storage (annotations, progress, etc.)
+    const annotationsCount = await db.count("annotations");
+    const sessionsCount = await db.count("sessions");
+
+    size += annotationsCount * 1024; // rough estimate
+    size += sessionsCount * 512;
+    size += files.length * 256; // metadata
+
+    return size;
+  }
+}

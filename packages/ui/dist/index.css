@@ -1,0 +1,85 @@
+/* src/theme/ThemeProvider.module.css */
+.themeRoot {
+  color: var(--reader-color-text);
+  background-color: var(--reader-color-background);
+  font-family: var(--reader-typography-font-family);
+  line-height: var(--reader-typography-line-height-normal);
+  min-height: 100%;
+}
+.themeRoot * {
+  box-sizing: border-box;
+}
+
+/* src/reader/ReaderView.module.css */
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: var(--reader-color-surface, #f8fafc);
+  color: var(--reader-color-on-surface, #0f172a);
+  overflow: hidden;
+}
+.canvas {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.controls {
+  position: absolute;
+  left: 50%;
+  bottom: var(--reader-spacing-lg, 1.5rem);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--reader-spacing-md, 1rem);
+  padding: var(--reader-spacing-sm, 0.5rem) var(--reader-spacing-md, 1rem);
+  border-radius: var(--reader-radius-lg, 1rem);
+  background-color: color-mix(in srgb, var(--reader-color-surface, #f1f5f9) 92%, transparent);
+  box-shadow: var(--reader-shadow-lg, 0 16px 32px rgba(15, 23, 42, 0.18));
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+.controlButton {
+  appearance: none;
+  border: none;
+  border-radius: var(--reader-radius-md, 0.75rem);
+  padding: var(--reader-spacing-sm, 0.5rem) var(--reader-spacing-lg, 1.5rem);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--reader-spacing-xs, 0.375rem);
+  background: var(--reader-color-accent, #2563eb);
+  color: var(--reader-color-on-accent, #ffffff);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+.controlButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--reader-shadow-md, 0 8px 20px rgba(37, 99, 235, 0.25));
+}
+.controlButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--reader-shadow-sm, 0 4px 12px rgba(37, 99, 235, 0.25));
+}
+.controlButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  box-shadow: none;
+}
+.statusBadge {
+  position: absolute;
+  top: var(--reader-spacing-md, 1rem);
+  right: var(--reader-spacing-md, 1rem);
+  padding: var(--reader-spacing-xs, 0.35rem) var(--reader-spacing-sm, 0.65rem);
+  border-radius: var(--reader-radius-full, 999px);
+  background-color: color-mix(in srgb, var(--reader-color-surface, #f1f5f9) 82%, transparent);
+  color: inherit;
+  font-size: clamp(0.75rem, 0.75rem + 0.1vw, 0.9rem);
+  font-weight: 500;
+  box-shadow: var(--reader-shadow-sm, 0 6px 18px rgba(15, 23, 42, 0.12));
+}
