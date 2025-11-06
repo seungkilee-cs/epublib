@@ -3,12 +3,20 @@ import { Annotation } from "../models/Annotation";
 import { Book } from "../models/Book";
 import { BookStatus } from "../models/BookStatus";
 import { ReadingProgress } from "../models/ReadingProgress";
-import { IFileAdapter } from "../interfaces/IFileAdapter";
+import {
+  IFileAdapter,
+  type FileData,
+  type FileOpenOptions,
+} from "../interfaces/IFileAdapter";
 import { IStorageAdapter } from "../interfaces/IStorageAdapter";
+import { EPUBParser } from "../utils/EPUBParser";
+import { CoverGenerator, type PlaceholderCoverOptions } from "../utils/CoverGenerator";
 
 export interface AddBookOptions {
   extractMetadata?: boolean;
+  extractCover?: boolean;
   createPlaceholderCover?: boolean;
+  placeholderOptions?: PlaceholderCoverOptions;
 }
 
 export class BookService {
@@ -17,27 +25,54 @@ export class BookService {
     private readonly fileAdapter: IFileAdapter
   ) {}
 
+  async addBookFromFilePicker(
+    overrides: Partial<Book> = {},
+    options: FileOpenOptions = {},
+    addOptions: AddBookOptions = {}
+  ): Promise<string> {
+    const file = await this.fileAdapter.openFile({
+      accept: [".epub"],
+      ...options,
+    });
+
+    const metadata = this.mergeMetadataWithFileData(file, overrides);
+    return this.addBook(file.data, metadata, addOptions);
+  }
+
+  async addBooksFromFilePicker(
+    overrides: Partial<Book> = {},
+    options: FileOpenOptions = {},
+    addOptions: AddBookOptions = {}
+  ): Promise<string[]> {
+    const files = await this.fileAdapter.openMultipleFiles({
+      accept: [".epub"],
+      multiple: true,
+      ...options,
+    });
+
+    const ids: string[] = [];
+    for (const file of files) {
+      const metadata = this.mergeMetadataWithFileData(file, overrides);
+      const id = await this.addBook(file.data, metadata, addOptions);
+      ids.push(id);
+    }
+
+    return ids;
+  }
+
   async addBook(
     file: ArrayBuffer,
     metadata: Partial<Book> = {},
     options: AddBookOptions = {}
   ): Promise<string> {
-    const mergedMetadata = options.extractMetadata
-      ? await this.extractMetadata(file, metadata)
-      : metadata;
-
-    const book: Book = {
-      id: mergedMetadata.id ?? uuid(),
-      title: mergedMetadata.title ?? "Untitled Book",
-      author: mergedMetadata.author ?? "Unknown Author",
-      fileSize: mergedMetadata.fileSize ?? file.byteLength,
-      dateAdded: mergedMetadata.dateAdded ?? new Date(),
-      status: mergedMetadata.status ?? BookStatus.NOT_STARTED,
-      ...mergedMetadata,
-    };
-
-    if (options.createPlaceholderCover && !book.coverUrl) {
-      book.coverUrl = this.createPlaceholderCover(book.title);
+    const { metadata: mergedMetadata, coverDataUrl } = await this.prepareMetadata(
+      file,
+      metadata,
+      options
+    );
+    const book = this.buildBookRecord(mergedMetadata, coverDataUrl, file.byteLength, options);
+    if (!book.coverThumbnailUrl && book.coverUrl) {
+      book.coverThumbnailUrl = await this.generateThumbnailSafe(book.coverUrl);
     }
 
     return this.storage.saveBook(book, file);
@@ -54,8 +89,11 @@ export class BookService {
 
   async deleteBook(id: string): Promise<void> {
     await this.storage.deleteBook(id);
-    await this.storage.deleteAnnotationsByBook(id);
-    await this.storage.deleteProgress(id);
+    await Promise.all([
+      this.storage.deleteAnnotationsByBook(id),
+      this.storage.deleteProgress(id),
+    ]);
+    await this.removeBookFromCollections(id);
   }
 
   async getBook(id: string): Promise<Book | null> {
@@ -78,23 +116,180 @@ export class BookService {
     return this.storage.getProgress(bookId);
   }
 
-  private async extractMetadata(
-    _file: ArrayBuffer,
-    fallback: Partial<Book>
-  ): Promise<Partial<Book>> {
-    // Phase 1 stub – actual implementation will leverage epub.js parsing.
-    return fallback;
+  private async prepareMetadata(
+    file: ArrayBuffer,
+    metadata: Partial<Book>,
+    options: AddBookOptions
+  ): Promise<{ metadata: Partial<Book>; coverDataUrl?: string }> {
+    const shouldParse = Boolean(options.extractMetadata || options.extractCover);
+    if (!shouldParse) {
+      return { metadata };
+    }
+
+    const parsed = await EPUBParser.parse(file, metadata);
+
+    const mergedMetadata =
+      options.extractMetadata === false
+        ? metadata
+        : {
+            ...metadata,
+            ...parsed.metadata,
+          };
+
+    const coverDataUrl =
+      options.extractCover === false
+        ? undefined
+        : parsed.coverDataUrl ??
+          (typeof parsed.metadata.coverUrl === "string" ? parsed.metadata.coverUrl : undefined);
+
+    return {
+      metadata: mergedMetadata,
+      coverDataUrl,
+    };
   }
 
-  private createPlaceholderCover(title: string): string {
-    const initials = title
-      .split(" ")
-      .map((part) => part[0])
-      .filter(Boolean)
-      .slice(0, 3)
-      .join("");
+  private buildBookRecord(
+    metadata: Partial<Book>,
+    coverDataUrl: string | undefined,
+    fileSize: number,
+    options: AddBookOptions
+  ): Book {
+    const normalized = this.normalizeMetadata(metadata, fileSize);
 
-    // Data URL placeholder (solid color); replace with canvas generation later.
-    return `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='300'><rect width='100%' height='100%' fill='%230069ff'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='48' fill='white'>${initials || "EPUB"}</text></svg>`;
+    const id = normalized.id ?? uuid();
+    const title = this.cleanText(normalized.title) ?? "Untitled Book";
+    const author = this.cleanText(normalized.author) ?? "Unknown Author";
+    const status = this.normalizeStatus(normalized.status);
+    const coverUrl =
+      typeof coverDataUrl === "string" && coverDataUrl.length
+        ? coverDataUrl
+        : typeof normalized.coverUrl === "string"
+        ? normalized.coverUrl
+        : undefined;
+
+    const book: Book = {
+      ...normalized,
+      id,
+      title,
+      author,
+      status,
+      fileSize: normalized.fileSize ?? fileSize,
+      dateAdded: normalized.dateAdded ?? new Date(),
+      coverUrl,
+      coverThumbnailUrl: normalized.coverThumbnailUrl,
+    };
+
+    if (!book.coverUrl && options.createPlaceholderCover) {
+      const placeholder = CoverGenerator.generatePlaceholder(book.title, options.placeholderOptions);
+      book.coverUrl = placeholder;
+      if (!book.coverThumbnailUrl) {
+        book.coverThumbnailUrl = placeholder;
+      }
+    }
+
+    return book;
+  }
+
+  private normalizeMetadata(
+    metadata: Partial<Book>,
+    fileSize: number
+  ): Partial<Book> {
+    const normalized: Partial<Book> = { ...metadata };
+
+    normalized.fileSize = metadata.fileSize ?? fileSize;
+    normalized.dateAdded = this.ensureDate(metadata.dateAdded) ?? new Date();
+    normalized.lastOpened = this.ensureDate(metadata.lastOpened);
+    normalized.publicationDate = this.ensureDate(metadata.publicationDate);
+
+    normalized.coverUrl = this.cleanText(metadata.coverUrl);
+    normalized.coverThumbnailUrl = this.cleanText(metadata.coverThumbnailUrl);
+
+    if (metadata.tags) {
+      const unique = new Set(
+        metadata.tags.map((tag) => this.cleanText(tag)).filter(Boolean) as string[]
+      );
+      normalized.tags = Array.from(unique);
+    }
+
+    return normalized;
+  }
+
+  private normalizeStatus(status?: Book["status"] | string): BookStatus {
+    if (!status) {
+      return BookStatus.NOT_STARTED;
+    }
+
+    const candidates = Object.values(BookStatus);
+    if (candidates.includes(status as BookStatus)) {
+      return status as BookStatus;
+    }
+
+    const normalized = String(status).toLowerCase();
+    const matched = candidates.find((value) => value === normalized);
+    return matched ?? BookStatus.NOT_STARTED;
+  }
+
+  private ensureDate(value?: Date | string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? undefined : value;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  private cleanText(value?: string): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : undefined;
+  }
+
+  private mergeMetadataWithFileData(
+    file: FileData,
+    overrides: Partial<Book>
+  ): Partial<Book> {
+    const inferredTitle = this.cleanText(overrides.title) ?? this.inferTitle(file.name);
+    return {
+      ...overrides,
+      title: inferredTitle,
+      fileSize: overrides.fileSize ?? file.size,
+    };
+  }
+
+  private inferTitle(filename: string): string {
+    const withoutExtension = filename.replace(/\.[^./\\]+$/u, "");
+    return withoutExtension || filename;
+  }
+
+  private async generateThumbnailSafe(coverUrl: string): Promise<string | undefined> {
+    try {
+      const thumbnail = await CoverGenerator.generateThumbnail(coverUrl, 160, 240, "#f8fafc");
+      return thumbnail ?? undefined;
+    } catch (error) {
+      console.warn("BookService: thumbnail generation failed", error);
+      return undefined;
+    }
+  }
+
+  private async removeBookFromCollections(bookId: string): Promise<void> {
+    const collections = await this.storage.getAllCollections();
+
+    const updates = collections
+      .filter((collection) => collection.bookIds.includes(bookId))
+      .map((collection) => {
+        const nextBookIds = collection.bookIds.filter((id) => id !== bookId);
+        return this.storage.updateCollection(collection.id, {
+          bookIds: nextBookIds,
+          updatedAt: new Date(),
+        });
+      });
+
+    await Promise.all(updates);
   }
 }

@@ -1,4 +1,5 @@
-import { openDB, IDBPDatabase, DBSchema, IDBPCursorWithValue } from "idb";
+import { openDB, IDBPDatabase, DBSchema } from "idb";
+import type { IDBPObjectStore, IDBPTransaction, StoreNames } from "idb";
 import {
   Annotation,
   AnnotationType,
@@ -16,6 +17,13 @@ interface ReaderDB extends DBSchema {
   books: {
     key: string;
     value: Book;
+    indexes: {
+      by_title: string;
+      by_author: string;
+      by_dateAdded: string;
+      by_lastOpened: string;
+      by_status: string;
+    };
   };
   files: {
     key: string;
@@ -33,6 +41,9 @@ interface ReaderDB extends DBSchema {
   collections: {
     key: string;
     value: Collection;
+    indexes: {
+      by_name: string;
+    };
   };
   settings: {
     key: string;
@@ -45,48 +56,38 @@ interface ReaderDB extends DBSchema {
   };
 }
 
+type IndexedStores = "books" | "collections";
+
+const DEFAULT_DB_NAME = "epub-reader";
+const CURRENT_DB_VERSION = 2;
+
 export class IndexedDBStorageAdapter implements IStorageAdapter {
   private dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null;
 
-  private dbName = "epub-reader";
+  private dbName = DEFAULT_DB_NAME;
+
+  private dbVersion = CURRENT_DB_VERSION;
 
   async initialize(options?: StorageInitializationOptions): Promise<void> {
     if (options?.dbName) {
       this.dbName = options.dbName;
     }
 
-    this.dbPromise = openDB<ReaderDB>(this.dbName, 1, {
-      upgrade(db: IDBPDatabase<ReaderDB>) {
-        if (!db.objectStoreNames.contains("books")) {
-          db.createObjectStore("books", { keyPath: "id" });
+    this.dbVersion = options?.dbVersion ?? CURRENT_DB_VERSION;
+
+    this.dbPromise = openDB<ReaderDB>(this.dbName, this.dbVersion, {
+      upgrade: (
+        db: IDBPDatabase<ReaderDB>,
+        oldVersion: number,
+        _newVersion: number | null,
+        transaction: IDBPTransaction<ReaderDB, StoreNames<ReaderDB>[], "versionchange">
+      ) => {
+        if (oldVersion < 1) {
+          this.createInitialSchema(db);
         }
 
-        if (!db.objectStoreNames.contains("files")) {
-          db.createObjectStore("files");
-        }
-
-        if (!db.objectStoreNames.contains("annotations")) {
-          const store = db.createObjectStore("annotations", { keyPath: "id" });
-          store.createIndex("by_book", "bookId", { unique: false });
-          store.createIndex("by_type", "type", { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains("progress")) {
-          db.createObjectStore("progress", { keyPath: "bookId" });
-        }
-
-        if (!db.objectStoreNames.contains("collections")) {
-          db.createObjectStore("collections", { keyPath: "id" });
-        }
-
-        if (!db.objectStoreNames.contains("settings")) {
-          db.createObjectStore("settings");
-        }
-
-        if (!db.objectStoreNames.contains("sessions")) {
-          const store = db.createObjectStore("sessions", { keyPath: "id" });
-          store.createIndex("by_book", "bookId", { unique: false });
-          store.createIndex("by_date", "startTime", { unique: false });
+        if (oldVersion < 2) {
+          this.upgradeToVersion2(transaction);
         }
       },
     });
@@ -375,5 +376,68 @@ export class IndexedDBStorageAdapter implements IStorageAdapter {
     size += files.length * 256; // metadata
 
     return size;
+  }
+
+  private createInitialSchema(db: IDBPDatabase<ReaderDB>): void {
+    const booksStore = db.createObjectStore("books", { keyPath: "id" });
+    this.addBookIndexes(booksStore);
+
+    db.createObjectStore("files");
+
+    const annotationsStore = db.createObjectStore("annotations", { keyPath: "id" });
+    annotationsStore.createIndex("by_book", "bookId", { unique: false });
+    annotationsStore.createIndex("by_type", "type", { unique: false });
+
+    db.createObjectStore("progress", { keyPath: "bookId" });
+
+    const collectionsStore = db.createObjectStore("collections", { keyPath: "id" });
+    this.addCollectionIndexes(collectionsStore);
+
+    db.createObjectStore("settings");
+
+    const sessionsStore = db.createObjectStore("sessions", { keyPath: "id" });
+    sessionsStore.createIndex("by_book", "bookId", { unique: false });
+    sessionsStore.createIndex("by_date", "startTime", { unique: false });
+  }
+
+  private upgradeToVersion2(
+    transaction: IDBPTransaction<ReaderDB, StoreNames<ReaderDB>[], "versionchange">
+  ): void {
+    const booksStore = transaction.objectStore("books");
+    this.addBookIndexes(booksStore);
+
+    const collectionsStore = transaction.objectStore("collections");
+    this.addCollectionIndexes(collectionsStore);
+  }
+
+  private addBookIndexes(
+    store: IDBPObjectStore<ReaderDB, StoreNames<ReaderDB>[], "books", "versionchange">
+  ): void {
+    this.ensureIndex(store, "by_title", "title");
+    this.ensureIndex(store, "by_author", "author");
+    this.ensureIndex(store, "by_dateAdded", "dateAdded");
+    this.ensureIndex(store, "by_lastOpened", "lastOpened");
+    this.ensureIndex(store, "by_status", "status");
+  }
+
+  private addCollectionIndexes(
+    store: IDBPObjectStore<ReaderDB, StoreNames<ReaderDB>[], "collections", "versionchange">
+  ): void {
+    this.ensureIndex(store, "by_name", "name");
+  }
+
+  private ensureIndex<
+    StoreName extends IndexedStores,
+    IndexName extends keyof ReaderDB[StoreName]["indexes"] & string
+  >(
+    store: IDBPObjectStore<ReaderDB, StoreNames<ReaderDB>[], StoreName, "versionchange">,
+    name: IndexName,
+    keyPath: string | string[],
+    options?: IDBIndexParameters
+  ): void {
+    const indexNames = store.indexNames as unknown as DOMStringList;
+    if (!indexNames.contains(name as string)) {
+      store.createIndex(name, keyPath, options);
+    }
   }
 }

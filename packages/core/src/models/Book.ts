@@ -10,6 +10,7 @@ export interface Book {
   publicationDate?: Date;
   description?: string;
   coverUrl?: string;
+  coverThumbnailUrl?: string;
   fileSize: number;
   pageCount?: number;
   wordCount?: number;

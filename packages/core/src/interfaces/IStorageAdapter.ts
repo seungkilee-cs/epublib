@@ -8,6 +8,7 @@ import { Settings } from "../models/Settings";
 
 export interface StorageInitializationOptions {
   dbName?: string;
+  dbVersion?: number;
 }
 
 export interface IStorageAdapter {

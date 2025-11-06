@@ -21,3 +21,4 @@ export * from "./interfaces/IStorageAdapter";
 export * from "./services/EPUBService";
 export * from "./services/BookService";
 export * from "./services/ProgressService";
+export { EPUBParser } from "./utils/EPUBParser";
