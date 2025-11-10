@@ -46,6 +46,10 @@ export class ProgressService {
     return this.storage.getProgress(bookId);
   }
 
+  async getAllProgress(): Promise<ReadingProgress[]> {
+    return this.storage.getAllProgress();
+  }
+
   async startSession(bookId: string): Promise<void> {
     this.activeSessions.set(bookId, new Date());
   }
