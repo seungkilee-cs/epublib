@@ -5,7 +5,11 @@ import type { Book } from "@epub-reader/core";
 import { LibraryView } from "@epub-reader/core";
 import { initializeServices, bookService, progressService } from "../services/appServices";
 import { formatBytes } from "../utils/formatBytes";
-import { LibraryView as LibraryViewComponent } from "../components/LibraryView";
+import {
+  LibraryView as LibraryViewComponent,
+  type LibrarySortDirection,
+  type LibrarySortKey,
+} from "../components/LibraryView";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
 
@@ -23,6 +27,12 @@ const ACCEPTED_MIME_TYPES = new Set(["application/epub+zip"]);
 
 const generateUploadId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const SORT_STORAGE_KEY = "library.sortPreference";
+const DEFAULT_SORT: { key: LibrarySortKey; direction: LibrarySortDirection } = {
+  key: "dateAdded",
+  direction: "desc",
+};
 
 
 const getExtension = (name: string): string => {
@@ -46,6 +56,40 @@ export function LibraryScreen(): JSX.Element {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [libraryView, setLibraryView] = useState<LibraryView>(LibraryView.GRID);
   const [progressByBookId, setProgressByBookId] = useState<Record<string, number>>({});
+  const [sortKey, setSortKey] = useState<LibrarySortKey>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_SORT.key;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(SORT_STORAGE_KEY);
+      if (!stored) {
+        return DEFAULT_SORT.key;
+      }
+
+      const parsed = JSON.parse(stored) as Partial<{ key: LibrarySortKey }>;
+      return parsed.key ?? DEFAULT_SORT.key;
+    } catch {
+      return DEFAULT_SORT.key;
+    }
+  });
+  const [sortDirection, setSortDirection] = useState<LibrarySortDirection>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_SORT.direction;
+    }
+
+    try {
+      const stored = window.localStorage.getItem(SORT_STORAGE_KEY);
+      if (!stored) {
+        return DEFAULT_SORT.direction;
+      }
+
+      const parsed = JSON.parse(stored) as Partial<{ direction: LibrarySortDirection }>;
+      return parsed.direction ?? DEFAULT_SORT.direction;
+    } catch {
+      return DEFAULT_SORT.direction;
+    }
+  });
   const navigate = useNavigate();
 
   const loadLibrary = useCallback(async () => {
@@ -223,6 +267,67 @@ export function LibraryScreen(): JSX.Element {
   }, []);
 
   const successfulUploads = useMemo(() => uploads.filter((upload) => upload.status === "success").length, [uploads]);
+
+  const sortedBooks = useMemo(() => {
+    const booksCopy = [...books];
+
+    const compareStrings = (a: string | undefined, b: string | undefined): number => {
+      return (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
+    };
+
+    const getDateValue = (value?: Date): number => {
+      if (!value) {
+        return 0;
+      }
+      const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+
+    booksCopy.sort((a, b) => {
+      let result = 0;
+
+      switch (sortKey) {
+        case "title":
+          result = compareStrings(a.title, b.title);
+          break;
+        case "author":
+          result = compareStrings(a.author, b.author);
+          break;
+        case "dateAdded":
+          result = getDateValue(a.dateAdded) - getDateValue(b.dateAdded);
+          break;
+        case "lastOpened":
+          result = getDateValue(a.lastOpened) - getDateValue(b.lastOpened);
+          break;
+        default:
+          result = 0;
+      }
+
+      if (result === 0 && sortKey !== "title") {
+        result = compareStrings(a.title, b.title);
+      }
+
+      return sortDirection === "asc" ? result : -result;
+    });
+
+    return booksCopy;
+  }, [books, sortDirection, sortKey]);
+
+  const handleSortChange = useCallback((nextKey: LibrarySortKey, nextDirection: LibrarySortDirection) => {
+    setSortKey(nextKey);
+    setSortDirection(nextDirection);
+
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(
+          SORT_STORAGE_KEY,
+          JSON.stringify({ key: nextKey, direction: nextDirection })
+        );
+      } catch {
+        // ignore persistence errors
+      }
+    }
+  }, []);
 
   const handleOpenBook = useCallback(
     (book: Book) => {
@@ -440,7 +545,7 @@ export function LibraryScreen(): JSX.Element {
         ) : null}
 
         <LibraryViewComponent
-          books={books}
+          books={sortedBooks}
           view={libraryView}
           onViewChange={setLibraryView}
           onOpenBook={handleOpenBook}
@@ -448,6 +553,9 @@ export function LibraryScreen(): JSX.Element {
           onDeleteBook={handleDeleteBook}
           progressByBookId={progressByBookId}
           isLoading={isUploading}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSortChange={handleSortChange}
         />
       </div>
     </div>

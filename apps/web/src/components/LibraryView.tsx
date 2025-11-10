@@ -4,6 +4,9 @@ import { LibraryView as LibraryViewMode } from "@epub-reader/core";
 import { formatBytes } from "../utils/formatBytes";
 import { BookCard } from "./BookCard";
 
+export type LibrarySortKey = "title" | "author" | "dateAdded" | "lastOpened";
+export type LibrarySortDirection = "asc" | "desc";
+
 export interface LibraryViewProps {
   books: Book[];
   view: LibraryViewMode;
@@ -13,11 +16,21 @@ export interface LibraryViewProps {
   onShowDetails?(book: Book): void;
   onDeleteBook?(book: Book): void;
   isLoading?: boolean;
+  sortKey: LibrarySortKey;
+  sortDirection: LibrarySortDirection;
+  onSortChange(key: LibrarySortKey, direction: LibrarySortDirection): void;
 }
 
 const viewOptions: Array<{ mode: LibraryViewMode; label: string }> = [
   { mode: LibraryViewMode.GRID, label: "Grid" },
   { mode: LibraryViewMode.LIST, label: "List" },
+];
+
+const sortOptions: Array<{ key: LibrarySortKey; label: string }> = [
+  { key: "title", label: "Title" },
+  { key: "author", label: "Author" },
+  { key: "dateAdded", label: "Date added" },
+  { key: "lastOpened", label: "Last read" },
 ];
 
 export function LibraryView({
@@ -29,51 +42,101 @@ export function LibraryView({
   onShowDetails,
   onDeleteBook,
   isLoading = false,
+  sortKey,
+  sortDirection,
+  onSortChange,
 }: LibraryViewProps): JSX.Element {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1.5rem" }}>
         <div>
           <h2 style={{ fontSize: "1.35rem", color: "#0f172a", marginBottom: "0.25rem" }}>Library</h2>
           <p style={{ color: "#64748b", fontSize: "0.95rem" }}>
             {books.length === 1 ? "1 book" : `${books.length} books`} available in your collection
           </p>
         </div>
-        <div
-          role="group"
-          aria-label="Change library view"
-          style={{
-            display: "inline-flex",
-            borderRadius: "999px",
-            background: "#e2e8f0",
-            padding: "0.25rem",
-            gap: "0.25rem",
-          }}
-        >
-          {viewOptions.map(({ mode, label }) => {
-            const isActive = mode === view;
-            return (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onViewChange(mode)}
-                style={{
-                  padding: "0.4rem 1rem",
-                  borderRadius: "999px",
-                  border: "none",
-                  cursor: isActive ? "default" : "pointer",
-                  background: isActive ? "#2563eb" : "transparent",
-                  color: isActive ? "#f8fafc" : "#1e293b",
-                  fontWeight: 600,
-                  fontSize: "0.95rem",
-                  transition: "background 0.2s ease, color 0.2s ease",
-                }}
-                aria-pressed={isActive}
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div
+            role="group"
+            aria-label="Change library view"
+            style={{
+              display: "inline-flex",
+              borderRadius: "999px",
+              background: "#e2e8f0",
+              padding: "0.25rem",
+              gap: "0.25rem",
+            }}
+          >
+            {viewOptions.map(({ mode, label }) => {
+              const isActive = mode === view;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onViewChange(mode)}
+                  style={{
+                    padding: "0.4rem 1rem",
+                    borderRadius: "999px",
+                    border: "none",
+                    cursor: isActive ? "default" : "pointer",
+                    background: isActive ? "#2563eb" : "transparent",
+                    color: isActive ? "#f8fafc" : "#1e293b",
+                    fontWeight: 600,
+                    fontSize: "0.95rem",
+                    transition: "background 0.2s ease, color 0.2s ease",
+                  }}
+                  aria-pressed={isActive}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <label htmlFor="library-sort" style={{ fontSize: "0.9rem", color: "#475569", fontWeight: 600 }}>
+              Sort by
+            </label>
+            <select
+              id="library-sort"
+              value={sortKey}
+              onChange={(event) => onSortChange(event.target.value as LibrarySortKey, sortDirection)}
+              style={{
+                appearance: "none",
+                padding: "0.35rem 1.75rem 0.35rem 0.75rem",
+                borderRadius: "999px",
+                border: "1px solid #cbd5f5",
+                background: "white",
+                color: "#1e293b",
+                fontWeight: 500,
+                fontSize: "0.95rem",
+                position: "relative",
+              }}
+            >
+              {sortOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => onSortChange(sortKey, sortDirection === "asc" ? "desc" : "asc")}
+              style={{
+                padding: "0.35rem 0.9rem",
+                borderRadius: "999px",
+                border: "1px solid #cbd5f5",
+                background: "white",
+                color: "#1e293b",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+              }}
+              aria-label={`Change sort direction (currently ${sortDirection === "asc" ? "ascending" : "descending"})`}
+            >
+              {sortDirection === "asc" ? "↑" : "↓"}
+            </button>
+          </div>
         </div>
       </div>
 

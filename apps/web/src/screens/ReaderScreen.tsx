@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ReaderView, ThemeProvider } from "@epub-reader/ui";
 import type { ReadingProgress } from "@epub-reader/core";
 import {
@@ -25,6 +25,7 @@ export function ReaderScreen() {
 
   const readerService = useMemo(() => createEPUBService(), []);
   const { bookId: routeBookId } = useParams<{ bookId?: string }>();
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +148,10 @@ export function ReaderScreen() {
     }
   }, []);
 
+  const handleReturnToLibrary = useCallback(() => {
+    navigate("/");
+  }, [navigate]);
+
   if (error) {
     return (
       <div role="alert" style={{ padding: "2rem" }}>
@@ -154,6 +159,13 @@ export function ReaderScreen() {
         <div>
           <button type="button" onClick={handleOpenLocal} style={{ marginTop: "1rem" }}>
             Open local EPUB…
+          </button>
+          <button
+            type="button"
+            onClick={handleReturnToLibrary}
+            style={{ marginTop: "1rem", marginLeft: "0.75rem" }}
+          >
+            Back to library
           </button>
         </div>
       </div>
@@ -171,6 +183,13 @@ export function ReaderScreen() {
         <div>
           <button type="button" onClick={handleOpenLocal} style={{ marginTop: "1rem" }}>
             Open local EPUB…
+          </button>
+          <button
+            type="button"
+            onClick={handleReturnToLibrary}
+            style={{ marginTop: "1rem", marginLeft: "0.75rem" }}
+          >
+            Back to library
           </button>
         </div>
       </div>
@@ -205,6 +224,9 @@ export function ReaderScreen() {
           <span>{progress ? `Progress: ${progress.percentage.toFixed(1)}%` : "New book"}</span>
           <button type="button" onClick={handleOpenLocal} style={{ padding: "0.25rem 0.75rem" }}>
             Open EPUB…
+          </button>
+          <button type="button" onClick={handleReturnToLibrary} style={{ padding: "0.25rem 0.75rem" }}>
+            Back to library
           </button>
         </div>
       </div>
