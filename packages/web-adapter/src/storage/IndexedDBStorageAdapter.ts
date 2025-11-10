@@ -128,6 +128,12 @@ export class IndexedDBStorageAdapter implements IStorageAdapter {
     return db.getAll("books");
   }
 
+  async getBookFile(id: string): Promise<ArrayBuffer | null> {
+    const db = await this.db();
+    const file = await db.get("files", id);
+    return file ?? null;
+  }
+
   async updateBook(id: string, updates: Partial<Book>): Promise<void> {
     const db = await this.db();
     const book = await db.get("books", id);

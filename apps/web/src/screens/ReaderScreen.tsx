@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useParams } from "react-router-dom";
 import { ReaderView, ThemeProvider } from "@epub-reader/ui";
 import type { ReadingProgress } from "@epub-reader/core";
 import {
@@ -23,13 +24,44 @@ export function ReaderScreen() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const readerService = useMemo(() => createEPUBService(), []);
+  const { bookId: routeBookId } = useParams<{ bookId?: string }>();
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
+      setIsLoading(true);
+      setError(null);
+
       try {
         await initializeServices();
+
+        const targetBookId = routeBookId ?? SAMPLE_BOOK_ID;
+
+        if (routeBookId) {
+          const [storedBook, storedFile, existingProgress] = await Promise.all([
+            bookService.getBook(targetBookId),
+            bookService.getBookFile(targetBookId),
+            progressService.getProgress(targetBookId),
+          ]);
+
+          if (cancelled) {
+            return;
+          }
+
+          if (!storedBook) {
+            throw new Error("Book not found in library");
+          }
+          if (!storedFile) {
+            throw new Error("Book file is missing or corrupted");
+          }
+
+          setBookId(targetBookId);
+          setBookData(storedFile);
+          setProgress(existingProgress ?? null);
+          setInitialLocation(existingProgress?.cfi ?? undefined);
+          return;
+        }
 
         const existingProgress = await progressService.getProgress(SAMPLE_BOOK_ID);
         if (cancelled) {
@@ -77,7 +109,7 @@ export function ReaderScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [routeBookId]);
 
   const handleProgress = useCallback((nextProgress: ReadingProgress) => {
     setProgress(nextProgress);

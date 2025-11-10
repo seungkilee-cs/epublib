@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import type { Book } from "@epub-reader/core";
 import { LibraryView } from "@epub-reader/core";
-import { initializeServices, bookService } from "../services/appServices";
+import { initializeServices, bookService, progressService } from "../services/appServices";
 import { formatBytes } from "../utils/formatBytes";
 import { LibraryView as LibraryViewComponent } from "../components/LibraryView";
 
@@ -44,6 +45,21 @@ export function LibraryScreen(): JSX.Element {
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [libraryView, setLibraryView] = useState<LibraryView>(LibraryView.GRID);
+  const [progressByBookId, setProgressByBookId] = useState<Record<string, number>>({});
+  const navigate = useNavigate();
+
+  const loadLibrary = useCallback(async () => {
+    const [allBooks, allProgress] = await Promise.all([
+      bookService.getAllBooks(),
+      progressService.getAllProgress(),
+    ]);
+    setBooks(allBooks);
+    const nextProgress: Record<string, number> = {};
+    for (const progress of allProgress) {
+      nextProgress[progress.bookId] = progress.percentage;
+    }
+    setProgressByBookId(nextProgress);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -54,10 +70,7 @@ export function LibraryScreen(): JSX.Element {
         if (!active) {
           return;
         }
-        const existingBooks = await bookService.getAllBooks();
-        if (active) {
-          setBooks(existingBooks);
-        }
+        await loadLibrary();
       } catch (error) {
         if (active) {
           setErrorBanner((error as Error).message);
@@ -68,12 +81,7 @@ export function LibraryScreen(): JSX.Element {
     return () => {
       active = false;
     };
-  }, []);
-
-  const refreshBooks = useCallback(async () => {
-    const allBooks = await bookService.getAllBooks();
-    setBooks(allBooks);
-  }, []);
+  }, [loadLibrary]);
 
   const updateUpload = useCallback((id: string, updates: Partial<UploadItem>) => {
     setUploads((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
@@ -171,10 +179,10 @@ export function LibraryScreen(): JSX.Element {
         }
       }
 
-      await refreshBooks();
+      await loadLibrary();
       setIsUploading(false);
     },
-    [refreshBooks, updateUpload, validateFile]
+    [loadLibrary, updateUpload, validateFile]
   );
 
   const handleFileInputChange = useCallback(
@@ -215,6 +223,29 @@ export function LibraryScreen(): JSX.Element {
   }, []);
 
   const successfulUploads = useMemo(() => uploads.filter((upload) => upload.status === "success").length, [uploads]);
+
+  const handleOpenBook = useCallback(
+    (book: Book) => {
+      navigate(`/book/${book.id}`);
+    },
+    [navigate]
+  );
+
+  const handleDeleteBook = useCallback(
+    async (book: Book) => {
+      try {
+        await bookService.deleteBook(book.id);
+        await loadLibrary();
+      } catch (error) {
+        setErrorBanner((error as Error).message);
+      }
+    },
+    [loadLibrary]
+  );
+
+  const handleShowDetails = useCallback((book: Book) => {
+    console.info("Show details for", book.id);
+  }, []);
 
   return (
     <div
@@ -412,6 +443,10 @@ export function LibraryScreen(): JSX.Element {
           books={books}
           view={libraryView}
           onViewChange={setLibraryView}
+          onOpenBook={handleOpenBook}
+          onShowDetails={handleShowDetails}
+          onDeleteBook={handleDeleteBook}
+          progressByBookId={progressByBookId}
           isLoading={isUploading}
         />
       </div>

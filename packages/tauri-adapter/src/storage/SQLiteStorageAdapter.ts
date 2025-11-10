@@ -32,6 +32,10 @@ export class SQLiteStorageAdapter implements IStorageAdapter {
     return invoke<Book[]>("storage_get_all_books");
   }
 
+  async getBookFile(_id: string): Promise<ArrayBuffer | null> {
+    throw new Error("getBookFile is not supported in the Tauri adapter yet");
+  }
+
   async updateBook(id: string, updates: Partial<Book>): Promise<void> {
     await invoke("storage_update_book", { id, updates });
   }

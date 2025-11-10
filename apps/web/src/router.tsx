@@ -8,6 +8,10 @@ export const router = createBrowserRouter([
     element: <LibraryScreen />,
   },
   {
+    path: "/book/:bookId",
+    element: <ReaderScreen />,
+  },
+  {
     path: "/reader",
     element: <ReaderScreen />,
   },

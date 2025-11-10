@@ -17,6 +17,7 @@ export interface IStorageAdapter {
   saveBook(book: Book, file: ArrayBuffer): Promise<string>;
   getBook(id: string): Promise<Book | null>;
   getAllBooks(): Promise<Book[]>;
+  getBookFile(id: string): Promise<ArrayBuffer | null>;
   updateBook(id: string, updates: Partial<Book>): Promise<void>;
   deleteBook(id: string): Promise<void>;
   searchBooks(query: string): Promise<Book[]>;

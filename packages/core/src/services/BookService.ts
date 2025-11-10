@@ -104,6 +104,10 @@ export class BookService {
     return this.storage.getAllBooks();
   }
 
+  async getBookFile(id: string): Promise<ArrayBuffer | null> {
+    return this.storage.getBookFile(id);
+  }
+
   async searchBooks(query: string): Promise<Book[]> {
     return this.storage.searchBooks(query);
   }

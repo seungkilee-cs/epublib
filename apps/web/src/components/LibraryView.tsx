@@ -1,12 +1,17 @@
-import { Fragment } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 import type { Book } from "@epub-reader/core";
 import { LibraryView as LibraryViewMode } from "@epub-reader/core";
 import { formatBytes } from "../utils/formatBytes";
+import { BookCard } from "./BookCard";
 
 export interface LibraryViewProps {
   books: Book[];
   view: LibraryViewMode;
   onViewChange(view: LibraryViewMode): void;
+  onOpenBook(book: Book): void;
+  progressByBookId?: Record<string, number>;
+  onShowDetails?(book: Book): void;
+  onDeleteBook?(book: Book): void;
   isLoading?: boolean;
 }
 
@@ -15,7 +20,16 @@ const viewOptions: Array<{ mode: LibraryViewMode; label: string }> = [
   { mode: LibraryViewMode.LIST, label: "List" },
 ];
 
-export function LibraryView({ books, view, onViewChange, isLoading = false }: LibraryViewProps): JSX.Element {
+export function LibraryView({
+  books,
+  view,
+  onViewChange,
+  onOpenBook,
+  progressByBookId,
+  onShowDetails,
+  onDeleteBook,
+  isLoading = false,
+}: LibraryViewProps): JSX.Element {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -67,7 +81,16 @@ export function LibraryView({ books, view, onViewChange, isLoading = false }: Li
 
       {!isLoading && books.length === 0 ? <LibraryEmptyState /> : null}
 
-      {!isLoading && books.length > 0 ? <LibraryItems books={books} view={view} /> : null}
+      {!isLoading && books.length > 0 ? (
+        <LibraryItems
+          books={books}
+          view={view}
+          onOpenBook={onOpenBook}
+          onShowDetails={onShowDetails}
+          onDeleteBook={onDeleteBook}
+          progressByBookId={progressByBookId}
+        />
+      ) : null}
     </section>
   );
 }
@@ -121,7 +144,23 @@ function LibraryEmptyState(): JSX.Element {
   );
 }
 
-function LibraryItems({ books, view }: { books: Book[]; view: LibraryViewMode }): JSX.Element {
+interface LibraryItemsProps {
+  books: Book[];
+  view: LibraryViewMode;
+  onOpenBook(book: Book): void;
+  onShowDetails?(book: Book): void;
+  onDeleteBook?(book: Book): void;
+  progressByBookId?: Record<string, number>;
+}
+
+function LibraryItems({
+  books,
+  view,
+  onOpenBook,
+  onShowDetails,
+  onDeleteBook,
+  progressByBookId,
+}: LibraryItemsProps): JSX.Element {
   if (view === LibraryViewMode.LIST) {
     return (
       <div
@@ -154,27 +193,103 @@ function LibraryItems({ books, view }: { books: Book[]; view: LibraryViewMode })
           <span>Size</span>
         </div>
         <div role="rowgroup" style={{ display: "flex", flexDirection: "column" }}>
-          {books.map((book) => (
-            <div
-              key={book.id}
-              role="row"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "3fr 2fr 1fr 1fr",
-                gap: "0.75rem",
-                padding: "0.9rem 1.25rem",
-                borderTop: "1px solid #e2e8f0",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontWeight: 600, color: "#1e293b" }}>{book.title}</span>
-              <span style={{ color: "#475569" }}>{book.author ?? "Unknown"}</span>
-              <span style={{ color: "#64748b", fontSize: "0.9rem" }}>
-                {book.dateAdded ? book.dateAdded.toLocaleDateString() : "—"}
-              </span>
-              <span style={{ color: "#64748b", fontSize: "0.9rem" }}>{formatBytes(book.fileSize)}</span>
-            </div>
-          ))}
+          {books.map((book) => {
+            const progress = progressByBookId?.[book.id];
+            return (
+              <button
+                key={book.id}
+                type="button"
+                role="row"
+                onClick={() => onOpenBook(book)}
+                onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpenBook(book);
+                  }
+                }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "3fr 2fr 1fr 1fr",
+                  gap: "0.75rem",
+                  padding: "0.9rem 1.25rem",
+                  borderTop: "1px solid #e2e8f0",
+                  alignItems: "center",
+                  textAlign: "left",
+                  background: "white",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "background 0.18s ease",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "#1e293b" }}>{book.title}</span>
+                <span style={{ color: "#475569" }}>{book.author ?? "Unknown"}</span>
+                <span style={{ color: "#64748b", fontSize: "0.9rem" }}>
+                  {book.dateAdded ? book.dateAdded.toLocaleDateString() : "—"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", justifyContent: "flex-end" }}>
+                  {typeof progress === "number" ? (
+                    <span style={{ color: "#2563eb", fontWeight: 600 }}>{progress.toFixed(0)}%</span>
+                  ) : null}
+                  <span style={{ color: "#64748b", fontSize: "0.9rem" }}>{formatBytes(book.fileSize)}</span>
+                </div>
+
+                {typeof progress === "number" ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      gridColumn: "1 / -1",
+                      marginTop: "0.75rem",
+                      height: "0.4rem",
+                      borderRadius: "999px",
+                      background: "#e2e8f0",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(Math.max(progress, 0), 100)}%`,
+                        height: "100%",
+                        background: "#2563eb",
+                        transition: "width 0.3s ease",
+                      }}
+                    />
+                  </div>
+                ) : null}
+
+                {(onShowDetails || onDeleteBook) && (
+                  <div
+                    style={{
+                      gridColumn: "1 / -1",
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "0.5rem",
+                      marginTop: "0.65rem",
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {onShowDetails ? (
+                      <button
+                        type="button"
+                        onClick={() => onShowDetails(book)}
+                        style={actionButtonStyle}
+                      >
+                        Details
+                      </button>
+                    ) : null}
+                    {onDeleteBook ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteBook(book)}
+                        style={{ ...actionButtonStyle, color: "#dc2626", borderColor: "#fecaca" }}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -192,57 +307,27 @@ function LibraryItems({ books, view }: { books: Book[]; view: LibraryViewMode })
       }}
     >
       {books.map((book) => (
-        <li
-          key={book.id}
-          style={{
-            background: "white",
-            borderRadius: "0.9rem",
-            padding: "1rem",
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-            boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              width: "100%",
-              paddingBottom: "152%",
-              borderRadius: "0.75rem",
-              overflow: "hidden",
-              background: "#e2e8f0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#94a3b8",
-              fontWeight: 600,
-            }}
-          >
-            {book.coverThumbnailUrl || book.coverUrl ? (
-              <img
-                src={book.coverThumbnailUrl ?? book.coverUrl}
-                alt={book.title}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                }}
-              />
-            ) : (
-              <span aria-hidden>EPUB</span>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            <span style={{ fontWeight: 600, color: "#111827" }}>{book.title}</span>
-            <span style={{ fontSize: "0.9rem", color: "#64748b" }}>{book.author ?? "Unknown author"}</span>
-            <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>{formatBytes(book.fileSize)}</span>
-          </div>
+        <li key={book.id}>
+          <BookCard
+            book={book}
+            progress={progressByBookId?.[book.id]}
+            onOpen={onOpenBook}
+            onShowDetails={onShowDetails}
+            onDelete={onDeleteBook}
+          />
         </li>
       ))}
     </ul>
   );
 }
+
+const actionButtonStyle: CSSProperties = {
+  padding: "0.35rem 0.9rem",
+  borderRadius: "999px",
+  border: "1px solid #cbd5f5",
+  background: "white",
+  color: "#1e293b",
+  fontSize: "0.85rem",
+  fontWeight: 600,
+  cursor: "pointer",
+};
