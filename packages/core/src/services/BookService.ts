@@ -279,6 +279,9 @@ export class BookService {
 
   private async removeBookFromCollections(bookId: string): Promise<void> {
     const collections = await this.storage.getAllCollections();
+    if (!Array.isArray(collections) || collections.length === 0) {
+      return;
+    }
 
     const updates = collections
       .filter((collection) => collection.bookIds.includes(bookId))

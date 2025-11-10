@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { Book } from "@epub-reader/core";
+import { LibraryView } from "@epub-reader/core";
 import { initializeServices, bookService } from "../services/appServices";
+import { formatBytes } from "../utils/formatBytes";
+import { LibraryView as LibraryViewComponent } from "../components/LibraryView";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
 
@@ -20,18 +23,6 @@ const ACCEPTED_MIME_TYPES = new Set(["application/epub+zip"]);
 const generateUploadId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `upload-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-const formatBytes = (size: number): string => {
-  if (size < 1024) {
-    return `${size} B`;
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
-  if (size < 1024 * 1024 * 1024) {
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-};
 
 const getExtension = (name: string): string => {
   const match = name.toLowerCase().match(/\.[^./\\]+$/u);
@@ -52,6 +43,7 @@ export function LibraryScreen(): JSX.Element {
   const [isUploading, setIsUploading] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [libraryView, setLibraryView] = useState<LibraryView>(LibraryView.GRID);
 
   useEffect(() => {
     let active = true;
@@ -416,48 +408,12 @@ export function LibraryScreen(): JSX.Element {
           </section>
         ) : null}
 
-        <section style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ fontSize: "1.35rem", color: "#0f172a" }}>Library summary</h2>
-            <span style={{ fontSize: "0.9rem", color: "#64748b" }}>
-              {books.length === 1 ? "1 book" : `${books.length} books`} stored
-            </span>
-          </div>
-
-          {books.length === 0 ? (
-            <p style={{ color: "#94a3b8" }}>No books added yet. Upload your first EPUB to get started.</p>
-          ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                margin: 0,
-                padding: 0,
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: "1rem",
-              }}
-            >
-              {books.map((book) => (
-                <li
-                  key={book.id}
-                  style={{
-                    background: "white",
-                    borderRadius: "0.9rem",
-                    padding: "1rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.35rem",
-                    boxShadow: "0 1px 3px rgba(15, 23, 42, 0.06)",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: "#111827" }}>{book.title}</span>
-                  <span style={{ fontSize: "0.9rem", color: "#6b7280" }}>{book.author ?? "Unknown author"}</span>
-                  <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>{formatBytes(book.fileSize)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <LibraryViewComponent
+          books={books}
+          view={libraryView}
+          onViewChange={setLibraryView}
+          isLoading={isUploading}
+        />
       </div>
     </div>
   );
