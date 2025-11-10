@@ -90,6 +90,8 @@ export function LibraryScreen(): JSX.Element {
       return DEFAULT_SORT.direction;
     }
   });
+  const [searchValue, setSearchValue] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
   const loadLibrary = useCallback(async () => {
@@ -268,8 +270,29 @@ export function LibraryScreen(): JSX.Element {
 
   const successfulUploads = useMemo(() => uploads.filter((upload) => upload.status === "success").length, [uploads]);
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setSearchQuery(searchValue.trim());
+    }, 200);
+
+    return () => window.clearTimeout(handle);
+  }, [searchValue]);
+
+  const filteredBooks = useMemo(() => {
+    if (!searchQuery) {
+      return books;
+    }
+
+    const normalized = searchQuery.toLowerCase();
+    return books.filter((book) => {
+      const title = book.title?.toLowerCase() ?? "";
+      const author = book.author?.toLowerCase() ?? "";
+      return title.includes(normalized) || author.includes(normalized);
+    });
+  }, [books, searchQuery]);
+
   const sortedBooks = useMemo(() => {
-    const booksCopy = [...books];
+    const booksCopy = [...filteredBooks];
 
     const compareStrings = (a: string | undefined, b: string | undefined): number => {
       return (a ?? "").localeCompare(b ?? "", undefined, { sensitivity: "base" });
@@ -311,7 +334,7 @@ export function LibraryScreen(): JSX.Element {
     });
 
     return booksCopy;
-  }, [books, sortDirection, sortKey]);
+  }, [filteredBooks, sortDirection, sortKey]);
 
   const handleSortChange = useCallback((nextKey: LibrarySortKey, nextDirection: LibrarySortDirection) => {
     setSortKey(nextKey);
@@ -335,6 +358,10 @@ export function LibraryScreen(): JSX.Element {
     },
     [navigate]
   );
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchValue(value);
+  }, []);
 
   const handleDeleteBook = useCallback(
     async (book: Book) => {
@@ -556,6 +583,11 @@ export function LibraryScreen(): JSX.Element {
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSortChange={handleSortChange}
+          searchValue={searchValue}
+          onSearchChange={handleSearchChange}
+          isFiltered={Boolean(searchQuery)}
+          highlightTerm={searchQuery}
+          totalBooks={books.length}
         />
       </div>
     </div>

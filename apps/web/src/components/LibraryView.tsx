@@ -3,6 +3,7 @@ import type { Book } from "@epub-reader/core";
 import { LibraryView as LibraryViewMode } from "@epub-reader/core";
 import { formatBytes } from "../utils/formatBytes";
 import { BookCard } from "./BookCard";
+import { highlightMatches } from "../utils/highlightMatches";
 
 export type LibrarySortKey = "title" | "author" | "dateAdded" | "lastOpened";
 export type LibrarySortDirection = "asc" | "desc";
@@ -19,6 +20,11 @@ export interface LibraryViewProps {
   sortKey: LibrarySortKey;
   sortDirection: LibrarySortDirection;
   onSortChange(key: LibrarySortKey, direction: LibrarySortDirection): void;
+  searchValue: string;
+  onSearchChange(value: string): void;
+  isFiltered: boolean;
+  highlightTerm?: string;
+  totalBooks: number;
 }
 
 const viewOptions: Array<{ mode: LibraryViewMode; label: string }> = [
@@ -45,6 +51,11 @@ export function LibraryView({
   sortKey,
   sortDirection,
   onSortChange,
+  searchValue,
+  onSearchChange,
+  isFiltered,
+  highlightTerm,
+  totalBooks,
 }: LibraryViewProps): JSX.Element {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -52,10 +63,53 @@ export function LibraryView({
         <div>
           <h2 style={{ fontSize: "1.35rem", color: "#0f172a", marginBottom: "0.25rem" }}>Library</h2>
           <p style={{ color: "#64748b", fontSize: "0.95rem" }}>
-            {books.length === 1 ? "1 book" : `${books.length} books`} available in your collection
+            {books.length === 1 ? "1 book" : `${books.length} books`} shown
+            {books.length !== totalBooks ? ` (of ${totalBooks})` : ""}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div style={{ position: "relative" }}>
+            <input
+              type="search"
+              value={searchValue}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search by title or author"
+              aria-label="Search library"
+              style={{
+                width: "240px",
+                maxWidth: "100%",
+                padding: "0.45rem 2.5rem 0.45rem 0.85rem",
+                borderRadius: "999px",
+                border: "1px solid #cbd5f5",
+                background: "white",
+                color: "#1e293b",
+                fontSize: "0.95rem",
+                boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+              }}
+            />
+            {searchValue ? (
+              <button
+                type="button"
+                onClick={() => onSearchChange("")}
+                aria-label="Clear search"
+                style={{
+                  position: "absolute",
+                  right: "0.6rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  border: "none",
+                  background: "transparent",
+                  color: "#64748b",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+
           <div
             role="group"
             aria-label="Change library view"
@@ -142,7 +196,9 @@ export function LibraryView({
 
       {isLoading ? <LibraryLoadingState view={view} /> : null}
 
-      {!isLoading && books.length === 0 ? <LibraryEmptyState /> : null}
+      {!isLoading && books.length === 0 ? (
+        <LibraryEmptyState isFiltered={isFiltered} onClearFilters={() => onSearchChange("")} />
+      ) : null}
 
       {!isLoading && books.length > 0 ? (
         <LibraryItems
@@ -152,6 +208,7 @@ export function LibraryView({
           onShowDetails={onShowDetails}
           onDeleteBook={onDeleteBook}
           progressByBookId={progressByBookId}
+          highlightTerm={highlightTerm}
         />
       ) : null}
     </section>
@@ -185,7 +242,7 @@ function LibraryLoadingState({ view }: { view: LibraryViewMode }): JSX.Element {
   );
 }
 
-function LibraryEmptyState(): JSX.Element {
+function LibraryEmptyState({ isFiltered, onClearFilters }: { isFiltered: boolean; onClearFilters(): void }): JSX.Element {
   return (
     <div
       style={{
@@ -198,11 +255,31 @@ function LibraryEmptyState(): JSX.Element {
       }}
     >
       <p style={{ fontSize: "1.1rem", fontWeight: 600, color: "#334155", marginBottom: "0.5rem" }}>
-        Your library is empty
+        {isFiltered ? "No books match your search" : "Your library is empty"}
       </p>
       <p style={{ fontSize: "0.95rem" }}>
-        Upload EPUB files to see them listed here. Metadata and cover images will appear automatically.
+        {isFiltered
+          ? "Try adjusting your search terms or clearing the filter."
+          : "Upload EPUB files to see them listed here. Metadata and cover images will appear automatically."}
       </p>
+      {isFiltered ? (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          style={{
+            marginTop: "1rem",
+            padding: "0.45rem 1.2rem",
+            borderRadius: "999px",
+            border: "1px solid #cbd5f5",
+            background: "white",
+            color: "#1e293b",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Clear search
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -214,6 +291,7 @@ interface LibraryItemsProps {
   onShowDetails?(book: Book): void;
   onDeleteBook?(book: Book): void;
   progressByBookId?: Record<string, number>;
+  highlightTerm?: string;
 }
 
 function LibraryItems({
@@ -223,6 +301,7 @@ function LibraryItems({
   onShowDetails,
   onDeleteBook,
   progressByBookId,
+  highlightTerm,
 }: LibraryItemsProps): JSX.Element {
   if (view === LibraryViewMode.LIST) {
     return (
@@ -284,8 +363,12 @@ function LibraryItems({
                   transition: "background 0.18s ease",
                 }}
               >
-                <span style={{ fontWeight: 600, color: "#1e293b" }}>{book.title}</span>
-                <span style={{ color: "#475569" }}>{book.author ?? "Unknown"}</span>
+                <span style={{ fontWeight: 600, color: "#1e293b" }}>
+                  {highlightMatches(book.title, highlightTerm)}
+                </span>
+                <span style={{ color: "#475569" }}>
+                  {highlightMatches(book.author ?? "Unknown", highlightTerm)}
+                </span>
                 <span style={{ color: "#64748b", fontSize: "0.9rem" }}>
                   {book.dateAdded ? book.dateAdded.toLocaleDateString() : "—"}
                 </span>
@@ -359,28 +442,25 @@ function LibraryItems({
   }
 
   return (
-    <ul
+    <div
       style={{
-        listStyle: "none",
-        margin: 0,
-        padding: 0,
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
         gap: "1rem",
       }}
     >
       {books.map((book) => (
-        <li key={book.id}>
-          <BookCard
-            book={book}
-            progress={progressByBookId?.[book.id]}
-            onOpen={onOpenBook}
-            onShowDetails={onShowDetails}
-            onDelete={onDeleteBook}
-          />
-        </li>
+        <BookCard
+          key={book.id}
+          book={book}
+          progress={progressByBookId?.[book.id]}
+          onOpen={onOpenBook}
+          onShowDetails={onShowDetails}
+          onDelete={onDeleteBook}
+          highlightTerm={highlightTerm}
+        />
       ))}
-    </ul>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import type { Book } from "@epub-reader/core";
 import { formatBytes } from "../utils/formatBytes";
+import { highlightMatches } from "../utils/highlightMatches";
 
 export interface BookCardProps {
   book: Book;
@@ -8,9 +9,17 @@ export interface BookCardProps {
   onOpen(book: Book): void;
   onShowDetails?(book: Book): void;
   onDelete?(book: Book): void;
+  highlightTerm?: string;
 }
 
-export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: BookCardProps): JSX.Element {
+export function BookCard({
+  book,
+  progress,
+  onOpen,
+  onShowDetails,
+  onDelete,
+  highlightTerm,
+}: BookCardProps): JSX.Element {
   const handleDetailsClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     onShowDetails?.(book);
@@ -31,13 +40,14 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
-        gap: "0.65rem",
-        borderRadius: "0.9rem",
+        gap: "0.5rem",
+        borderRadius: "0.75rem",
         background: "white",
         boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
-        padding: "1rem",
+        padding: "0.75rem",
         position: "relative",
         transition: "transform 0.18s ease, box-shadow 0.18s ease",
+        minHeight: "220px",
       }}
       onMouseEnter={(event) => {
         event.currentTarget.style.transform = "translateY(-2px)";
@@ -52,8 +62,8 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
         style={{
           position: "relative",
           width: "100%",
-          paddingBottom: "152%",
-          borderRadius: "0.75rem",
+          paddingBottom: "140%",
+          borderRadius: "0.65rem",
           overflow: "hidden",
           background: "#e2e8f0",
           display: "flex",
@@ -61,6 +71,7 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
           justifyContent: "center",
           color: "#94a3b8",
           fontWeight: 600,
+          fontSize: "0.95rem",
         }}
       >
         {book.coverThumbnailUrl || book.coverUrl ? (
@@ -81,13 +92,17 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", textAlign: "left" }}>
-        <span style={{ fontWeight: 600, color: "#0f172a" }}>{book.title}</span>
-        <span style={{ fontSize: "0.9rem", color: "#64748b" }}>{book.author ?? "Unknown author"}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", textAlign: "left" }}>
+        <span style={{ fontWeight: 600, color: "#0f172a", fontSize: "0.95rem", lineHeight: 1.25 }}>
+          {highlightMatches(book.title, highlightTerm)}
+        </span>
+        <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+          {highlightMatches(book.author ?? "Unknown author", highlightTerm)}
+        </span>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>{formatBytes(book.fileSize)}</span>
+          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>{formatBytes(book.fileSize)}</span>
           {typeof progress === "number" ? (
-            <span style={{ fontSize: "0.85rem", color: "#2563eb", fontWeight: 600 }}>
+            <span style={{ fontSize: "0.8rem", color: "#2563eb", fontWeight: 600 }}>
               {progress.toFixed(0)}%
             </span>
           ) : null}
@@ -97,7 +112,7 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
       {typeof progress === "number" ? (
         <div
           style={{
-            height: "0.4rem",
+            height: "0.3rem",
             borderRadius: "999px",
             background: "#e2e8f0",
             overflow: "hidden",
@@ -109,14 +124,14 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
               width: `${Math.min(Math.max(progress, 0), 100)}%`,
               height: "100%",
               background: "#2563eb",
-              transition: "width 0.3s ease",
+              transition: "width 0.25s ease",
             }}
           />
         </div>
       ) : null}
 
       {(onShowDetails || onDelete) && (
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.4rem" }}>
           {onShowDetails ? (
             <button
               type="button"
@@ -142,12 +157,12 @@ export function BookCard({ book, progress, onOpen, onShowDetails, onDelete }: Bo
 }
 
 const actionButtonStyle: CSSProperties = {
-  padding: "0.35rem 0.9rem",
+  padding: "0.3rem 0.8rem",
   borderRadius: "999px",
   border: "1px solid #cbd5f5",
   background: "white",
   color: "#1e293b",
-  fontSize: "0.85rem",
+  fontSize: "0.8rem",
   fontWeight: 600,
   cursor: "pointer",
 };
