@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ReaderView, ThemeProvider } from "@epub-reader/ui";
-import type { ReadingProgress } from "@epub-reader/core";
+import { ReaderView, TableOfContents, ThemeProvider } from "@epub-reader/ui";
+import type { LocationInfo, ReadingProgress, TocItem } from "@epub-reader/core";
 import {
   initializeServices,
   createEPUBService,
@@ -21,6 +21,8 @@ export function ReaderScreen() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ReadingProgress | null>(null);
   const [initialLocation, setInitialLocation] = useState<string | undefined>(undefined);
+  const [tableOfContents, setTableOfContents] = useState<TocItem[]>([]);
+  const [currentChapterHref, setCurrentChapterHref] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const readerService = useMemo(() => createEPUBService(), []);
@@ -70,6 +72,7 @@ export function ReaderScreen() {
         }
         setProgress(existingProgress ?? null);
         setInitialLocation(existingProgress?.cfi ?? undefined);
+        setCurrentChapterHref(existingProgress?.currentChapter ?? null);
 
         const response = await fetch(SAMPLE_BOOK_URL);
         if (!response.ok) {
@@ -115,6 +118,7 @@ export function ReaderScreen() {
   const handleProgress = useCallback((nextProgress: ReadingProgress) => {
     setProgress(nextProgress);
     setInitialLocation(nextProgress.cfi);
+    setCurrentChapterHref(nextProgress.currentChapter ?? null);
   }, []);
 
   const handleOpenLocal = useCallback(async () => {
@@ -141,6 +145,7 @@ export function ReaderScreen() {
       setBookData(file.data);
       setProgress(existingProgress ?? null);
       setInitialLocation(existingProgress?.cfi ?? undefined);
+      setCurrentChapterHref(existingProgress?.currentChapter ?? null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -151,6 +156,25 @@ export function ReaderScreen() {
   const handleReturnToLibrary = useCallback(() => {
     navigate("/");
   }, [navigate]);
+
+  const handleLocationChange = useCallback((location: LocationInfo) => {
+    setCurrentChapterHref(location.chapterHref ?? location.chapter ?? null);
+  }, []);
+
+  const handleTableOfContentsChange = useCallback((items: TocItem[]) => {
+    setTableOfContents(items);
+  }, []);
+
+  const handleNavigateToChapter = useCallback(
+    (href: string) => {
+      void readerService
+        .goToHref(href)
+        .catch((err) => setError((err as Error).message ?? "Failed to navigate to chapter"));
+    },
+    [readerService]
+  );
+
+  const isTableOfContentsLoading = (isLoading && !tableOfContents.length) || (!bookData && isLoading);
 
   if (error) {
     return (
@@ -198,36 +222,67 @@ export function ReaderScreen() {
 
   return (
     <ThemeProvider>
-      <div style={{ width: "100vw", height: "100vh", position: "relative" }}>
-        <ReaderView
-          service={readerService}
-          bookData={bookData}
-          bookId={bookId}
-          progressService={progressService}
-          onProgress={handleProgress}
-          initialLocation={initialLocation}
-        />
-        <div
+      <div
+        style={{
+          width: "100vw",
+          height: "100vh",
+          display: "flex",
+          background: "var(--reader-shell-background, #f1f5f9)",
+        }}
+      >
+        <aside
           style={{
-            position: "absolute",
-            top: "1rem",
-            left: "1rem",
-            background: "rgba(15,23,42,0.6)",
-            color: "white",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.75rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.75rem",
+            width: "min(340px, 28vw)",
+            minWidth: "260px",
+            borderRight: "1px solid rgba(148, 163, 184, 0.25)",
+            background: "var(--reader-sidebar-surface, #ffffff)",
+            boxShadow: "0 0 40px rgba(15,23,42,0.06)",
           }}
         >
-          <span>{progress ? `Progress: ${progress.percentage.toFixed(1)}%` : "New book"}</span>
-          <button type="button" onClick={handleOpenLocal} style={{ padding: "0.25rem 0.75rem" }}>
-            Open EPUB…
-          </button>
-          <button type="button" onClick={handleReturnToLibrary} style={{ padding: "0.25rem 0.75rem" }}>
-            Back to library
-          </button>
+          <TableOfContents
+            toc={tableOfContents}
+            currentChapterHref={currentChapterHref}
+            onNavigate={handleNavigateToChapter}
+            isLoading={isTableOfContentsLoading}
+          />
+        </aside>
+
+        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          <ReaderView
+            service={readerService}
+            bookData={bookData}
+            bookId={bookId}
+            progressService={progressService}
+            onProgress={handleProgress}
+            initialLocation={initialLocation}
+            onLocationChange={handleLocationChange}
+            onTableOfContentsChange={handleTableOfContentsChange}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              top: "1rem",
+              left: "1rem",
+              background: "rgba(15,23,42,0.6)",
+              color: "white",
+              padding: "0.5rem 1rem",
+              borderRadius: "0.75rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            <span>{progress ? `Progress: ${progress.percentage.toFixed(1)}%` : "New book"}</span>
+            <button type="button" onClick={handleOpenLocal} style={{ padding: "0.25rem 0.75rem" }}>
+              Open EPUB…
+            </button>
+            <button type="button" onClick={handleReturnToLibrary} style={{ padding: "0.25rem 0.75rem" }}>
+              Back to library
+            </button>
+          </div>
         </div>
       </div>
     </ThemeProvider>

@@ -1,0 +1,148 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--reader-color-surface-elevated, #f8fafc);
+  color: var(--reader-color-on-surface, #0f172a);
+  border-right: 1px solid color-mix(in srgb, var(--reader-color-outline, #cbd5f5) 60%, transparent);
+}
+
+.header {
+  padding: var(--reader-spacing-md, 1rem) var(--reader-spacing-lg, 1.25rem) 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--reader-color-on-surface, #0f172a) 72%, #0f172a 28%);
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--reader-spacing-sm, 0.75rem) var(--reader-spacing-lg, 1.25rem);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  margin: 0;
+  padding: 0;
+}
+
+.itemRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--reader-spacing-xs, 0.5rem);
+  padding: var(--reader-spacing-xs, 0.35rem) var(--reader-spacing-xs, 0.35rem);
+  padding-left: calc(var(--toc-depth, 0) * 1.25rem + var(--reader-spacing-sm, 0.75rem));
+  border-radius: var(--reader-radius-md, 0.75rem);
+  transition: background-color 0.2s ease;
+}
+
+.itemRow:hover {
+  background: color-mix(in srgb, var(--reader-color-surface, #f1f5f9) 60%, transparent);
+}
+
+.itemRow[data-active="true"] {
+  background: color-mix(in srgb, var(--reader-color-accent, #2563eb) 14%, transparent);
+}
+
+.toggleButton {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--reader-radius-sm, 0.5rem);
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.toggleButton:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.toggleButton:focus-visible {
+  outline: 2px solid var(--reader-color-accent, #2563eb);
+  outline-offset: 1px;
+}
+
+.toggleGlyph {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.togglePlaceholder {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.itemButton {
+  appearance: none;
+  border: none;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  padding: 0;
+  padding-right: var(--reader-spacing-sm, 0.75rem);
+  position: relative;
+  width: 100%;
+}
+
+.itemButton:hover,
+.itemButton:focus-visible {
+  text-decoration: underline;
+}
+
+.itemButton:focus-visible {
+  outline: none;
+}
+
+.itemButton[aria-current="true"] {
+  color: var(--reader-color-accent, #2563eb);
+  font-weight: 700;
+}
+
+.itemLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  word-break: break-word;
+}
+
+.sectionBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reader-color-surface, #f1f5f9) 80%, transparent);
+  color: color-mix(in srgb, currentColor 75%, transparent);
+}
+
+.emptyState {
+  margin-top: var(--reader-spacing-lg, 1.25rem);
+  padding: 0 var(--reader-spacing-md, 1rem);
+  font-size: 0.9rem;
+  color: color-mix(in srgb, var(--reader-color-on-surface, #0f172a) 60%, transparent);
+}

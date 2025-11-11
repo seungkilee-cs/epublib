@@ -11,6 +11,7 @@ import type {
   LocationInfo,
   ReadingProgress,
   ProgressService,
+  TocItem,
 } from "@epub-reader/core";
 import {
   EPUBService,
@@ -63,6 +64,7 @@ export type ReaderViewProps = {
   progressService?: ProgressApi;
   progressDebounceMs?: number;
   onProgress?: (progress: ReadingProgress) => void;
+  onTableOfContentsChange?: (items: TocItem[]) => void;
 };
 
 function toError(error: unknown): Error {
@@ -119,6 +121,7 @@ export function ReaderView({
   progressService,
   progressDebounceMs = 750,
   onProgress,
+  onTableOfContentsChange,
 }: ReaderViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastInitialLocationRef = useRef<string | undefined>(undefined);
@@ -233,6 +236,8 @@ export function ReaderView({
         progressTimerRef.current = null;
       }
 
+      onTableOfContentsChange?.([]);
+
       try {
         await service.destroy().catch(() => undefined);
 
@@ -280,6 +285,17 @@ export function ReaderView({
           onLocationChange?.(location);
           queueProgressUpdate(location);
         }
+
+        if (onTableOfContentsChange) {
+          try {
+            const tocItems = await service.getToc();
+            if (!cancelled) {
+              onTableOfContentsChange(tocItems);
+            }
+          } catch (error) {
+            console.warn("ReaderView: failed to load table of contents", error);
+          }
+        }
       } catch (err) {
         if (cancelled) {
           return;
@@ -318,6 +334,7 @@ export function ReaderView({
     onLocationChange,
     onReady,
     onError,
+    onTableOfContentsChange,
     progressService,
     queueProgressUpdate,
     saveProgressImmediate,

@@ -8,3 +8,5 @@ export type {
 } from "./reader/ReaderView";
 export { NavigationControls } from "./reader/NavigationControls";
 export type { NavigationControlsProps } from "./reader/NavigationControls";
+export { TableOfContents } from "./reader/TableOfContents";
+export type { TableOfContentsProps } from "./reader/TableOfContents";
