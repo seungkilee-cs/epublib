@@ -30,9 +30,7 @@ export function ThemeSelector({ value, onChange, className, disabled }: ThemeSel
     <div className={classes} role="toolbar" aria-label="Theme selector">
       {THEME_OPTIONS.map((option) => {
         const isActive = option.value === value;
-        const optionClassName = [styles.option, isActive ? styles.optionActive : "", disabled ? styles.disabled ?? "" : ""]
-          .filter(Boolean)
-          .join(" ");
+        const optionClassName = [styles.option, isActive ? styles.optionActive : ""].filter(Boolean).join(" ");
         return (
           <button
             key={option.value}

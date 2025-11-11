@@ -1,13 +1,21 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ReaderView, TableOfContents, ThemeProvider } from "@epub-reader/ui";
-import type { LocationInfo, ReadingProgress, TocItem } from "@epub-reader/core";
+import {
+  ReaderView,
+  TableOfContents,
+  ThemeProvider,
+  ThemeSelector,
+  readerThemePresets,
+} from "@epub-reader/ui";
+import type { LocationInfo, ReadingProgress, TocItem, Settings } from "@epub-reader/core";
+import { Theme } from "@epub-reader/core";
 import {
   initializeServices,
   createEPUBService,
   progressService,
   bookService,
   fileAdapter,
+  settingsService,
 } from "../services/appServices";
 
 const SAMPLE_BOOK_ID = "sample-alice";
@@ -15,7 +23,7 @@ const SAMPLE_BOOK_TITLE = "Alice in Wonderland (Sample)";
 const SAMPLE_BOOK_URL =
   "https://raw.githubusercontent.com/benoitvallon/sample-epub/master/Alice%20in%20Wonderland.epub";
 
-export function ReaderScreen() {
+export function ReaderScreen(): JSX.Element {
   const [bookData, setBookData] = useState<ArrayBuffer | null>(null);
   const [bookId, setBookId] = useState<string>(SAMPLE_BOOK_ID);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +32,8 @@ export function ReaderScreen() {
   const [tableOfContents, setTableOfContents] = useState<TocItem[]>([]);
   const [currentChapterHref, setCurrentChapterHref] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [isReaderReady, setIsReaderReady] = useState<boolean>(false);
 
   const readerService = useMemo(() => createEPUBService(), []);
   const { bookId: routeBookId } = useParams<{ bookId?: string }>();
@@ -32,12 +42,19 @@ export function ReaderScreen() {
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
+    async function load() {
       setIsLoading(true);
       setError(null);
+      setIsReaderReady(false);
 
       try {
         await initializeServices();
+
+        const userSettings = await settingsService.getSettings();
+        if (cancelled) {
+          return;
+        }
+        setSettings(userSettings);
 
         const targetBookId = routeBookId ?? SAMPLE_BOOK_ID;
 
@@ -63,6 +80,7 @@ export function ReaderScreen() {
           setBookData(storedFile);
           setProgress(existingProgress ?? null);
           setInitialLocation(existingProgress?.cfi ?? undefined);
+          setCurrentChapterHref(existingProgress?.currentChapter ?? null);
           return;
         }
 
@@ -108,7 +126,9 @@ export function ReaderScreen() {
           setIsLoading(false);
         }
       }
-    })();
+    }
+
+    void load();
 
     return () => {
       cancelled = true;
@@ -176,6 +196,48 @@ export function ReaderScreen() {
 
   const isTableOfContentsLoading = (isLoading && !tableOfContents.length) || (!bookData && isLoading);
 
+  const currentTheme = settings?.theme ?? Theme.LIGHT;
+
+  const themeOverrides = useMemo(() => readerThemePresets[currentTheme] ?? {}, [currentTheme]);
+
+  const handleReaderReady = useCallback(() => {
+    setIsReaderReady(true);
+  }, []);
+
+  const handleReaderError = useCallback((readerError: Error) => {
+    setError(readerError.message);
+  }, []);
+
+  const handleThemeChange = useCallback(
+    async (nextTheme: Theme) => {
+      try {
+        const updated = await settingsService.updateSettings({ theme: nextTheme });
+        setSettings(updated);
+        setError(null);
+      } catch (err) {
+        setError((err as Error).message ?? "Failed to update theme");
+      }
+    },
+    []
+  );
+
+  const themeSignature = useMemo(() => {
+    if (!settings) {
+      return null;
+    }
+    return JSON.stringify({ theme: settings.theme, customTheme: settings.customTheme });
+  }, [settings]);
+
+  useEffect(() => {
+    if (!isReaderReady || !settings || !themeSignature) {
+      return;
+    }
+
+    void settingsService
+      .applyToEPUB(readerService, { settings })
+      .catch((err) => setError((err as Error).message ?? "Failed to apply theme to reader"));
+  }, [isReaderReady, readerService, settings, themeSignature]);
+
   if (error) {
     return (
       <div role="alert" style={{ padding: "2rem" }}>
@@ -221,7 +283,7 @@ export function ReaderScreen() {
   }
 
   return (
-    <ThemeProvider>
+    <ThemeProvider theme={themeOverrides}>
       <div
         style={{
           width: "100vw",
@@ -257,6 +319,8 @@ export function ReaderScreen() {
             initialLocation={initialLocation}
             onLocationChange={handleLocationChange}
             onTableOfContentsChange={handleTableOfContentsChange}
+            onReady={handleReaderReady}
+            onError={handleReaderError}
           />
 
           <div
@@ -273,6 +337,7 @@ export function ReaderScreen() {
               gap: "0.75rem",
               boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
               backdropFilter: "blur(6px)",
+              flexWrap: "wrap",
             }}
           >
             <span>{progress ? `Progress: ${progress.percentage.toFixed(1)}%` : "New book"}</span>
@@ -283,6 +348,24 @@ export function ReaderScreen() {
               Back to library
             </button>
           </div>
+
+          {settings ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                background: "rgba(15,23,42,0.6)",
+                color: "white",
+                padding: "0.5rem",
+                borderRadius: "0.75rem",
+                boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
+                backdropFilter: "blur(6px)",
+              }}
+            >
+              <ThemeSelector value={currentTheme} onChange={handleThemeChange} disabled={isLoading} />
+            </div>
+          ) : null}
         </div>
       </div>
     </ThemeProvider>
