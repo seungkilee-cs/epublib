@@ -10,6 +10,7 @@ import {
   type LibrarySortDirection,
   type LibrarySortKey,
 } from "../components/LibraryView";
+import { BookDetailsModal } from "../components/BookDetailsModal";
 
 type UploadStatus = "pending" | "uploading" | "success" | "error";
 
@@ -92,7 +93,25 @@ export function LibraryScreen(): JSX.Element {
   });
   const [searchValue, setSearchValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [isDetailsSaving, setIsDetailsSaving] = useState(false);
+  const [isDetailsDeleting, setIsDetailsDeleting] = useState(false);
   const navigate = useNavigate();
+
+  const selectedBook = useMemo(() => {
+    if (!selectedBookId) {
+      return null;
+    }
+    return books.find((book) => book.id === selectedBookId) ?? null;
+  }, [books, selectedBookId]);
+
+  const selectedBookProgress = useMemo(() => {
+    if (!selectedBookId) {
+      return undefined;
+    }
+    return progressByBookId[selectedBookId];
+  }, [progressByBookId, selectedBookId]);
 
   const loadLibrary = useCallback(async () => {
     const [allBooks, allProgress] = await Promise.all([
@@ -270,6 +289,19 @@ export function LibraryScreen(): JSX.Element {
 
   const successfulUploads = useMemo(() => uploads.filter((upload) => upload.status === "success").length, [uploads]);
 
+  const closeDetails = useCallback(() => {
+    setSelectedBookId(null);
+    setDetailsError(null);
+    setIsDetailsSaving(false);
+    setIsDetailsDeleting(false);
+  }, []);
+
+  useEffect(() => {
+    if (selectedBookId && !selectedBook) {
+      closeDetails();
+    }
+  }, [closeDetails, selectedBook, selectedBookId]);
+
   useEffect(() => {
     const handle = window.setTimeout(() => {
       setSearchQuery(searchValue.trim());
@@ -363,21 +395,72 @@ export function LibraryScreen(): JSX.Element {
     setSearchValue(value);
   }, []);
 
-  const handleDeleteBook = useCallback(
-    async (book: Book) => {
-      try {
-        await bookService.deleteBook(book.id);
-        await loadLibrary();
-      } catch (error) {
-        setErrorBanner((error as Error).message);
-      }
+  const deleteBookById = useCallback(
+    async (bookId: string) => {
+      await bookService.deleteBook(bookId);
+      await loadLibrary();
     },
     [loadLibrary]
   );
 
+  const handleDeleteBook = useCallback(
+    async (book: Book) => {
+      try {
+        await deleteBookById(book.id);
+      } catch (error) {
+        setErrorBanner((error as Error).message);
+      }
+    },
+    [deleteBookById]
+  );
+
   const handleShowDetails = useCallback((book: Book) => {
-    console.info("Show details for", book.id);
+    setSelectedBookId(book.id);
+    setDetailsError(null);
+    setIsDetailsSaving(false);
+    setIsDetailsDeleting(false);
   }, []);
+
+  const handleUpdateBookDetails = useCallback(
+    async (updates: Partial<Book>) => {
+      if (!selectedBookId) {
+        return;
+      }
+
+      setIsDetailsSaving(true);
+      setDetailsError(null);
+
+      try {
+        await bookService.updateBook(selectedBookId, updates);
+        await loadLibrary();
+      } catch (error) {
+        const message = (error as Error).message;
+        setDetailsError(message);
+        throw error;
+      } finally {
+        setIsDetailsSaving(false);
+      }
+    },
+    [loadLibrary, selectedBookId]
+  );
+
+  const handleDeleteBookFromDetails = useCallback(async () => {
+    if (!selectedBookId) {
+      return;
+    }
+
+    setIsDetailsDeleting(true);
+    setDetailsError(null);
+
+    try {
+      await deleteBookById(selectedBookId);
+      closeDetails();
+    } catch (error) {
+      setDetailsError((error as Error).message);
+    } finally {
+      setIsDetailsDeleting(false);
+    }
+  }, [closeDetails, deleteBookById, selectedBookId]);
 
   return (
     <div
@@ -589,6 +672,19 @@ export function LibraryScreen(): JSX.Element {
           highlightTerm={searchQuery}
           totalBooks={books.length}
         />
+
+        {selectedBook ? (
+          <BookDetailsModal
+            book={selectedBook}
+            progressPercentage={selectedBookProgress}
+            onClose={closeDetails}
+            onUpdate={handleUpdateBookDetails}
+            onDelete={handleDeleteBookFromDetails}
+            isSaving={isDetailsSaving}
+            isDeleting={isDetailsDeleting}
+            errorMessage={detailsError}
+          />
+        ) : null}
       </div>
     </div>
   );
