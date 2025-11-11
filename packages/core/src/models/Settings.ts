@@ -38,3 +38,29 @@ export interface Settings {
   sidebarPosition: "left" | "right";
   enableTelemetry: boolean;
 }
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: Theme.LIGHT,
+  fontFamily: "'Inter', system-ui",
+  fontSize: 16,
+  lineHeight: 1.5,
+  letterSpacing: 0,
+  textAlign: TextAlign.JUSTIFY,
+  paragraphSpacing: 1.2,
+  overrideBookStyles: false,
+  viewMode: ViewMode.PAGINATED,
+  pageWidth: 720,
+  margins: {
+    top: 32,
+    right: 48,
+    bottom: 32,
+    left: 48,
+  },
+  maxContentWidth: 960,
+  autoSaveInterval: 30,
+  gesturesEnabled: true,
+  animationsEnabled: true,
+  defaultLibraryView: LibraryView.GRID,
+  sidebarPosition: "left",
+  enableTelemetry: false,
+};

@@ -22,6 +22,8 @@ export interface TocItem {
   subitems?: TocItem[];
 }
 
+export type RenditionThemeStyles = Record<string, Record<string, string>>;
+
 export type EPUBEvent =
   | "relocated"
   | "rendered"
@@ -154,13 +156,14 @@ export class EPUBService {
     };
   }
 
-  applyTheme(theme: Theme, styles: Record<string, string>): void {
+  applyTheme(theme: Theme, styles: RenditionThemeStyles): void {
     const rendition = this.rendition;
     if (!rendition) {
       return;
     }
 
-    rendition.themes.register(theme, styles);
+    const payload = styles as unknown as Record<string, string>;
+    rendition.themes.register(theme, payload);
     rendition.themes.select(theme);
   }
 
