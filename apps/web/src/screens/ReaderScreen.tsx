@@ -7,8 +7,8 @@ import {
   ThemeSelector,
   readerThemePresets,
 } from "@epub-reader/ui";
-import type { LocationInfo, ReadingProgress, TocItem, Settings } from "@epub-reader/core";
-import { Theme } from "@epub-reader/core";
+import type { LocationInfo, ReadingProgress, TocItem, Settings, SettingsUpdate } from "@epub-reader/core";
+import { Theme, TextAlign } from "@epub-reader/core";
 import {
   initializeServices,
   createEPUBService,
@@ -22,6 +22,21 @@ const SAMPLE_BOOK_ID = "sample-alice";
 const SAMPLE_BOOK_TITLE = "Alice in Wonderland (Sample)";
 const SAMPLE_BOOK_URL =
   "https://raw.githubusercontent.com/benoitvallon/sample-epub/master/Alice%20in%20Wonderland.epub";
+
+const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
+  { label: "Inter", value: "'Inter', system-ui" },
+  { label: "Merriweather", value: "'Merriweather', serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Open Sans", value: "'Open Sans', system-ui" },
+  { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+];
+
+const TEXT_ALIGN_OPTIONS: { value: TextAlign; label: string }[] = [
+  { value: TextAlign.LEFT, label: "Left" },
+  { value: TextAlign.JUSTIFY, label: "Justify" },
+  { value: TextAlign.CENTER, label: "Center" },
+  { value: TextAlign.RIGHT, label: "Right" },
+];
 
 export function ReaderScreen(): JSX.Element {
   const [bookData, setBookData] = useState<ArrayBuffer | null>(null);
@@ -208,35 +223,75 @@ export function ReaderScreen(): JSX.Element {
     setError(readerError.message);
   }, []);
 
-  const handleThemeChange = useCallback(
-    async (nextTheme: Theme) => {
-      try {
-        const updated = await settingsService.updateSettings({ theme: nextTheme });
-        setSettings(updated);
-        setError(null);
-      } catch (err) {
-        setError((err as Error).message ?? "Failed to update theme");
+  const handleSettingsUpdate = useCallback(async (update: SettingsUpdate) => {
+    const { customTheme, margins, ...rest } = update;
+
+    setSettings((prev) => {
+      if (!prev) {
+        return prev;
       }
+
+      const draft: Settings = {
+        ...prev,
+        ...rest,
+        margins: margins ? { ...prev.margins, ...margins } : prev.margins,
+      };
+
+      if (customTheme === null) {
+        draft.customTheme = undefined;
+      } else if (typeof customTheme !== "undefined") {
+        draft.customTheme = customTheme;
+      }
+
+      return draft;
+    });
+
+    try {
+      const updated = await settingsService.updateSettings(update);
+      setSettings(updated);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message ?? "Failed to update settings");
+      try {
+        const latest = await settingsService.getSettings();
+        setSettings(latest);
+      } catch (loadErr) {
+        setError((loadErr as Error).message ?? "Failed to reload settings");
+      }
+    }
+  }, []);
+
+  const handleThemeChange = useCallback(
+    (nextTheme: Theme) => {
+      void handleSettingsUpdate({ theme: nextTheme });
     },
-    []
+    [handleSettingsUpdate]
   );
 
-  const themeSignature = useMemo(() => {
+  const readerSettingsSignature = useMemo(() => {
     if (!settings) {
       return null;
     }
-    return JSON.stringify({ theme: settings.theme, customTheme: settings.customTheme });
+    return JSON.stringify({
+      theme: settings.theme,
+      customTheme: settings.customTheme,
+      fontFamily: settings.fontFamily,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      letterSpacing: settings.letterSpacing,
+      textAlign: settings.textAlign,
+    });
   }, [settings]);
 
   useEffect(() => {
-    if (!isReaderReady || !settings || !themeSignature) {
+    if (!isReaderReady || !settings || !readerSettingsSignature) {
       return;
     }
 
     void settingsService
       .applyToEPUB(readerService, { settings })
       .catch((err) => setError((err as Error).message ?? "Failed to apply theme to reader"));
-  }, [isReaderReady, readerService, settings, themeSignature]);
+  }, [isReaderReady, readerService, settings, readerSettingsSignature]);
 
   if (error) {
     return (
@@ -355,15 +410,159 @@ export function ReaderScreen(): JSX.Element {
                 position: "absolute",
                 top: "1rem",
                 right: "1rem",
-                background: "rgba(15,23,42,0.6)",
-                color: "white",
-                padding: "0.5rem",
-                borderRadius: "0.75rem",
-                boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
-                backdropFilter: "blur(6px)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                maxWidth: "min(320px, 28vw)",
               }}
             >
-              <ThemeSelector value={currentTheme} onChange={handleThemeChange} disabled={isLoading} />
+              <div
+                style={{
+                  background: "rgba(15,23,42,0.6)",
+                  color: "white",
+                  padding: "0.5rem",
+                  borderRadius: "0.75rem",
+                  boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
+                  backdropFilter: "blur(6px)",
+                }}
+              >
+                <ThemeSelector value={currentTheme} onChange={handleThemeChange} disabled={isLoading} />
+              </div>
+
+              <div
+                style={{
+                  background: "rgba(15,23,42,0.6)",
+                  color: "white",
+                  padding: "0.75rem",
+                  borderRadius: "0.75rem",
+                  boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
+                  backdropFilter: "blur(6px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                }}
+              >
+                <strong style={{ fontSize: "0.95rem" }}>Typography</strong>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>Font family</span>
+                  <select
+                    value={settings.fontFamily}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      void handleSettingsUpdate({ fontFamily: value });
+                    }}
+                    style={{
+                      padding: "0.35rem 0.5rem",
+                      borderRadius: "0.5rem",
+                      border: "1px solid rgba(255,255,255,0.25)",
+                      background: "rgba(15,23,42,0.45)",
+                      color: "white",
+                    }}
+                  >
+                    {FONT_FAMILY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>
+                    Font size: {Math.round(settings.fontSize)}px
+                  </span>
+                  <input
+                    type="range"
+                    min={8}
+                    max={32}
+                    step={1}
+                    value={settings.fontSize}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      void handleSettingsUpdate({ fontSize: next });
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>
+                    Line height: {settings.lineHeight.toFixed(2)}
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={3}
+                    step={0.05}
+                    value={settings.lineHeight}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      void handleSettingsUpdate({ lineHeight: parseFloat(next.toFixed(2)) });
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>
+                    Letter spacing: {settings.letterSpacing.toFixed(2)}px
+                  </span>
+                  <input
+                    type="range"
+                    min={-1}
+                    max={5}
+                    step={0.1}
+                    value={settings.letterSpacing}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      void handleSettingsUpdate({ letterSpacing: parseFloat(next.toFixed(2)) });
+                    }}
+                  />
+                </label>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>Text alignment</span>
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    {TEXT_ALIGN_OPTIONS.map((option) => {
+                      const isActive = settings.textAlign === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => void handleSettingsUpdate({ textAlign: option.value })}
+                          style={{
+                            padding: "0.25rem 0.6rem",
+                            borderRadius: "0.5rem",
+                            border: "1px solid rgba(255,255,255,0.25)",
+                            background: isActive ? "rgba(59,130,246,0.25)" : "rgba(15,23,42,0.35)",
+                            color: "white",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "0.75rem",
+                    borderRadius: "0.6rem",
+                    background: "rgba(15,23,42,0.45)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    fontFamily: settings.fontFamily,
+                    fontSize: `${settings.fontSize}px`,
+                    lineHeight: settings.lineHeight,
+                    letterSpacing: `${settings.letterSpacing}px`,
+                    textAlign: settings.textAlign,
+                    color: "white",
+                  }}
+                >
+                  “It was much pleasanter at home,” thought poor Alice, “when one wasn't always growing larger and
+                  smaller.”
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
