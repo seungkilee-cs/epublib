@@ -28,6 +28,8 @@ export interface Settings {
   paragraphSpacing: number;
   overrideBookStyles: boolean;
   viewMode: ViewMode;
+  spreadMode: ViewMode;
+  defaultPageSpread: "auto" | "single" | "double";
   pageWidth: number;
   margins: Margins;
   maxContentWidth: number;
@@ -49,6 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   paragraphSpacing: 1.2,
   overrideBookStyles: false,
   viewMode: ViewMode.PAGINATED,
+  spreadMode: ViewMode.SINGLE_PAGE,
+  defaultPageSpread: "auto",
   pageWidth: 720,
   margins: {
     top: 32,

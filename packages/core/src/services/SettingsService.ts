@@ -17,6 +17,8 @@ export interface SettingsUpdate {
   paragraphSpacing?: Settings["paragraphSpacing"];
   overrideBookStyles?: Settings["overrideBookStyles"];
   viewMode?: Settings["viewMode"];
+  spreadMode?: Settings["spreadMode"];
+  defaultPageSpread?: Settings["defaultPageSpread"];
   pageWidth?: Settings["pageWidth"];
   margins?: Partial<Settings["margins"]>;
   maxContentWidth?: Settings["maxContentWidth"];
@@ -126,6 +128,7 @@ export class SettingsService {
       : await this.loadSettings(options.forceReload ?? false);
 
     service.setViewMode(settings.viewMode);
+    service.setSpreadMode(settings.spreadMode);
     service.applyTheme(settings.theme, this.createThemeStyles(settings));
 
     return settings;
@@ -137,6 +140,8 @@ export class SettingsService {
       ...settings,
       theme: this.normalizeTheme(settings.theme),
       viewMode: this.normalizeViewMode(settings.viewMode),
+      spreadMode: this.normalizeSpreadMode(settings.spreadMode),
+      defaultPageSpread: this.normalizePageSpread(settings.defaultPageSpread),
       textAlign: this.normalizeTextAlign(settings.textAlign),
       defaultLibraryView: this.normalizeLibraryView(settings.defaultLibraryView),
       customTheme: settings.customTheme ?? undefined,
@@ -203,6 +208,22 @@ export class SettingsService {
       return DEFAULT_SETTINGS.viewMode;
     }
     return Object.values(ViewMode).includes(viewMode) ? viewMode : DEFAULT_SETTINGS.viewMode;
+  }
+
+  private normalizeSpreadMode(spreadMode: ViewMode | undefined): ViewMode {
+    if (spreadMode === ViewMode.TWO_PAGE) {
+      return ViewMode.TWO_PAGE;
+    }
+    return ViewMode.SINGLE_PAGE;
+  }
+
+  private normalizePageSpread(
+    pageSpread: Settings["defaultPageSpread"] | undefined
+  ): Settings["defaultPageSpread"] {
+    if (pageSpread === "single" || pageSpread === "double") {
+      return pageSpread;
+    }
+    return "auto";
   }
 
   private normalizeTextAlign(textAlign: TextAlign | undefined): TextAlign {

@@ -178,6 +178,24 @@ export class EPUBService {
     rendition.flow(flow);
   }
 
+  setSpreadMode(spreadMode: ViewMode): void {
+    const rendition = this.rendition;
+    if (!rendition) {
+      return;
+    }
+
+    const spread = (rendition as unknown as { spread?: (mode: string) => void }).spread;
+    if (!spread) {
+      return;
+    }
+
+    if (spreadMode === ViewMode.TWO_PAGE) {
+      spread("auto");
+    } else {
+      spread("none");
+    }
+  }
+
   on(eventName: EPUBEvent, callback: EventCallback): void {
     this.rendition?.on(eventName, callback);
   }

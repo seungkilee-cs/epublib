@@ -8,7 +8,7 @@ import {
   readerThemePresets,
 } from "@epub-reader/ui";
 import type { LocationInfo, ReadingProgress, TocItem, Settings, SettingsUpdate } from "@epub-reader/core";
-import { Theme, TextAlign } from "@epub-reader/core";
+import { Theme, TextAlign, ViewMode } from "@epub-reader/core";
 import {
   initializeServices,
   createEPUBService,
@@ -36,6 +36,16 @@ const TEXT_ALIGN_OPTIONS: { value: TextAlign; label: string }[] = [
   { value: TextAlign.JUSTIFY, label: "Justify" },
   { value: TextAlign.CENTER, label: "Center" },
   { value: TextAlign.RIGHT, label: "Right" },
+];
+
+const VIEW_MODE_OPTIONS: { value: ViewMode; label: string; description: string }[] = [
+  { value: ViewMode.PAGINATED, label: "Paginated", description: "Traditional page turns" },
+  { value: ViewMode.CONTINUOUS, label: "Continuous", description: "Scroll vertically" },
+];
+
+const SPREAD_MODE_OPTIONS: { value: ViewMode; label: string; description: string }[] = [
+  { value: ViewMode.SINGLE_PAGE, label: "Single page", description: "One page at a time" },
+  { value: ViewMode.TWO_PAGE, label: "Two page", description: "Facing page spread" },
 ];
 
 export function ReaderScreen(): JSX.Element {
@@ -268,6 +278,28 @@ export function ReaderScreen(): JSX.Element {
     [handleSettingsUpdate]
   );
 
+  const handleViewModeChange = useCallback(
+    (mode: ViewMode) => {
+      const update: SettingsUpdate = { viewMode: mode };
+      if (mode === ViewMode.CONTINUOUS) {
+        update.spreadMode = ViewMode.SINGLE_PAGE;
+        update.defaultPageSpread = "single";
+      }
+      void handleSettingsUpdate(update);
+    },
+    [handleSettingsUpdate]
+  );
+
+  const handleSpreadModeChange = useCallback(
+    (mode: ViewMode) => {
+      void handleSettingsUpdate({
+        spreadMode: mode,
+        defaultPageSpread: mode === ViewMode.TWO_PAGE ? "double" : "single",
+      });
+    },
+    [handleSettingsUpdate]
+  );
+
   const readerSettingsSignature = useMemo(() => {
     if (!settings) {
       return null;
@@ -280,6 +312,8 @@ export function ReaderScreen(): JSX.Element {
       lineHeight: settings.lineHeight,
       letterSpacing: settings.letterSpacing,
       textAlign: settings.textAlign,
+      viewMode: settings.viewMode,
+      spreadMode: settings.spreadMode,
     });
   }, [settings]);
 
@@ -337,6 +371,8 @@ export function ReaderScreen(): JSX.Element {
     );
   }
 
+  const readerFlow = settings?.viewMode === ViewMode.CONTINUOUS ? "scrolled" : "paginated";
+
   return (
     <ThemeProvider theme={themeOverrides}>
       <div
@@ -376,6 +412,7 @@ export function ReaderScreen(): JSX.Element {
             onTableOfContentsChange={handleTableOfContentsChange}
             onReady={handleReaderReady}
             onError={handleReaderError}
+            flow={readerFlow}
           />
 
           <div
@@ -561,6 +598,90 @@ export function ReaderScreen(): JSX.Element {
                 >
                   “It was much pleasanter at home,” thought poor Alice, “when one wasn't always growing larger and
                   smaller.”
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "rgba(15,23,42,0.6)",
+                  color: "white",
+                  padding: "0.75rem",
+                  borderRadius: "0.75rem",
+                  boxShadow: "0 12px 28px rgba(15,23,42,0.24)",
+                  backdropFilter: "blur(6px)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                }}
+              >
+                <strong style={{ fontSize: "0.95rem" }}>Layout</strong>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>View mode</span>
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    {VIEW_MODE_OPTIONS.map((option) => {
+                      const isActive = settings.viewMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => handleViewModeChange(option.value)}
+                          style={{
+                            padding: "0.4rem 0.7rem",
+                            borderRadius: "0.55rem",
+                            border: "1px solid rgba(255,255,255,0.25)",
+                            background: isActive ? "rgba(59,130,246,0.25)" : "rgba(15,23,42,0.35)",
+                            color: "white",
+                            cursor: isActive ? "default" : "pointer",
+                            minWidth: "fit-content",
+                          }}
+                          disabled={isLoading}
+                          aria-pressed={isActive}
+                        >
+                          <div style={{ fontWeight: 600 }}>{option.label}</div>
+                          <div style={{ fontSize: "0.7rem", opacity: 0.8 }}>{option.description}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", opacity: 0.85 }}>Page spread</span>
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                    {SPREAD_MODE_OPTIONS.map((option) => {
+                      const isActive = settings.spreadMode === option.value;
+                      const isDisabled =
+                        settings.viewMode === ViewMode.CONTINUOUS || isLoading;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => handleSpreadModeChange(option.value)}
+                          style={{
+                            padding: "0.4rem 0.7rem",
+                            borderRadius: "0.55rem",
+                            border: "1px solid rgba(255,255,255,0.25)",
+                            background: isActive ? "rgba(59,130,246,0.25)" : "rgba(15,23,42,0.35)",
+                            color: "white",
+                            cursor: isDisabled ? "not-allowed" : isActive ? "default" : "pointer",
+                            opacity: isDisabled ? 0.5 : 1,
+                            minWidth: "fit-content",
+                          }}
+                          disabled={isDisabled}
+                          aria-pressed={isActive}
+                        >
+                          <div style={{ fontWeight: 600 }}>{option.label}</div>
+                          <div style={{ fontSize: "0.7rem", opacity: 0.8 }}>{option.description}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {settings.viewMode === ViewMode.CONTINUOUS ? (
+                    <span style={{ fontSize: "0.7rem", opacity: 0.75 }}>
+                      Page spreads are unavailable in continuous scroll mode.
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>
